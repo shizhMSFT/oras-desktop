@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
+             x:Class="OrasProject.OrasDesktop.Views.CopyManifestDialog">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="20">
+    <TextBlock Grid.Row="0" Text="Copy Manifest" FontWeight="Bold" FontSize="16" Margin="0,0,0,20" />
+    
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+      <TextBlock Text="Source: " Width="100" VerticalAlignment="Center" />
+      <TextBlock x:Name="SourceTagTextBlock" VerticalAlignment="Center" />
+    </StackPanel>
+    
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,20">
+      <TextBlock Text="Destination Tag: " Width="100" VerticalAlignment="Center" />
+      <TextBox x:Name="DestinationTagTextBox" Width="200" />
+    </StackPanel>
+    
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button x:Name="CancelButton" Content="Cancel" Width="80" />
+      <Button x:Name="CopyButton" Content="Copy" Width="80" />
+    </StackPanel>
+  </Grid>
+</UserControl>

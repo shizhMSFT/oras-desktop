@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="250"
+             x:Class="OrasProject.OrasDesktop.Views.LoginDialog">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20">
+    <TextBlock Grid.Row="0" Text="Registry Authentication" FontWeight="Bold" FontSize="16" Margin="0,0,0,20" />
+    
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+      <TextBlock Text="Registry: " Width="100" VerticalAlignment="Center" />
+      <TextBlock x:Name="RegistryTextBlock" VerticalAlignment="Center" />
+    </StackPanel>
+    
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+      <TextBlock Text="Type: " Width="100" VerticalAlignment="Center" />
+      <ComboBox x:Name="AuthTypeComboBox" Width="200" 
+                SelectionChanged="AuthTypeComboBox_SelectionChanged">
+        <ComboBoxItem>Basic</ComboBoxItem>
+        <ComboBoxItem>Token</ComboBoxItem>
+      </ComboBox>
+    </StackPanel>
+    
+    <Grid Grid.Row="3" x:Name="BasicAuthPanel" RowDefinitions="Auto,Auto" Margin="0,0,0,20">
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+        <TextBlock Text="Username: " Width="100" VerticalAlignment="Center" />
+        <TextBox x:Name="UsernameTextBox" Width="200" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Orientation="Horizontal">
+        <TextBlock Text="Password: " Width="100" VerticalAlignment="Center" />
+        <TextBox x:Name="PasswordTextBox" Width="200" PasswordChar="*" />
+      </StackPanel>
+    </Grid>
+    
+    <Grid Grid.Row="3" x:Name="TokenAuthPanel" IsVisible="False" Margin="0,0,0,20">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="Token: " Width="100" VerticalAlignment="Center" />
+        <TextBox x:Name="TokenTextBox" Width="200" />
+      </StackPanel>
+    </Grid>
+    
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button x:Name="CancelButton" Content="Cancel" Width="80" />
+      <Button x:Name="LoginButton" Content="Login" Width="80" />
+    </StackPanel>
+  </Grid>
+</UserControl>

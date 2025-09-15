@@ -4,9 +4,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:views="clr-namespace:OrasProject.OrasDesktop.Views"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
         x:Class="OrasProject.OrasDesktop.Views.MainWindow"
         Icon="/Assets/avalonia-logo.ico"
-        Title="OrasProject.OrasDesktop">
+        Title="ORAS Desktop Client"
+        WindowStartupLocation="CenterScreen"
+        MinWidth="800" MinHeight="500">
         <views:MainView />
 </Window>
