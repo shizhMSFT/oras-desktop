@@ -429,18 +429,29 @@ namespace OrasProject.OrasDesktop.Services
                     }
                 }
 
-                // Configure HTTP protocol based on registry settings
-                string protocol = tag.Repository.Registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Client for delete request
+                ICredentialProvider? credentialProvider = null;
+                if (tag.Repository.Registry.RequiresAuthentication)
+                {
+                    var credential = new Credential
+                    {
+                        Username = tag.Repository.Registry.Username ?? string.Empty,
+                        Password = tag.Repository.Registry.Password ?? string.Empty,
+                        AccessToken = tag.Repository.Registry.Token ?? string.Empty
+                    };
+                    credentialProvider = new SingleRegistryCredentialProvider(tag.Repository.Registry.Url, credential);
+                }
+                
+                var client = new Client(_httpClient, credentialProvider);
                 
                 // Get repository name without registry URL
                 var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
                 
                 // Delete the manifest using the OCI API
-                var request = new HttpRequestMessage(
-                    HttpMethod.Delete, 
-                    $"{protocol}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Digest}");
+                var deleteUri = new Uri($"{(tag.Repository.Registry.IsSecure ? "https" : "http")}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Digest}");
+                var request = new HttpRequestMessage(HttpMethod.Delete, deleteUri);
                 
-                var response = await _httpClient.SendAsync(request);
+                var response = await client.SendAsync(request, default);
                 
                 return response.IsSuccessStatusCode;
             }
