@@ -1,22 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Caching.Memory;
 using OrasProject.Oras; // for TargetExtensions.CopyAsync
 using OrasProject.Oras.Content;
-using OrasProject.Oras.Oci;
-using OrasProject.Oras.Registry;
 using OrasProject.Oras.Registry.Remote;
 using OrasProject.Oras.Registry.Remote.Auth;
-using OrasProject.OrasDesktop.Services;
 
 // Reflection no longer needed after using official CopyAsync extension.
 
