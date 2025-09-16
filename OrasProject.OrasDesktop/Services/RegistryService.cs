@@ -48,8 +48,8 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[registry.Url] = registry;
                 
-                // Use oras-dotnet Client with authentication
-                ICredentialProvider? credentialProvider = null;
+                // Use oras-dotnet Registry.PingAsync for authentication testing
+                IClient client;
                 
                 if (registry.RequiresAuthentication)
                 {
@@ -59,15 +59,17 @@ namespace OrasProject.OrasDesktop.Services
                         Password = registry.Password ?? string.Empty,
                         AccessToken = registry.Token ?? string.Empty
                     };
-                    credentialProvider = new SingleRegistryCredentialProvider(registry.Url, credential);
+                    var credentialProvider = new SingleRegistryCredentialProvider(registry.Url, credential);
+                    client = new Client(_httpClient, credentialProvider);
+                }
+                else
+                {
+                    client = new Client(_httpClient);
                 }
                 
-                var client = new Client(_httpClient, credentialProvider);
-                var testUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/");
-                var request = new HttpRequestMessage(HttpMethod.Get, testUri);
-                
-                var response = await client.SendAsync(request, default);
-                return response.IsSuccessStatusCode;
+                var orasRegistry = new OrasProject.Oras.Registry.Remote.Registry(registry.Url, client);
+                await orasRegistry.PingAsync();
+                return true;
             }
             catch (Exception)
             {
@@ -185,47 +187,47 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[repository.Registry.Url] = repository.Registry;
 
-                // Configure HTTP protocol based on registry settings
-                string protocol = repository.Registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Repository for getting tags
+                IClient client;
                 
+                if (repository.Registry.RequiresAuthentication)
+                {
+                    var credential = new Credential
+                    {
+                        Username = repository.Registry.Username ?? string.Empty,
+                        Password = repository.Registry.Password ?? string.Empty,
+                        AccessToken = repository.Registry.Token ?? string.Empty
+                    };
+                    var credentialProvider = new SingleRegistryCredentialProvider(repository.Registry.Url, credential);
+                    client = new Client(_httpClient, credentialProvider);
+                }
+                else
+                {
+                    client = new Client(_httpClient);
+                }
+
                 // Get repository name without registry URL
                 var repoPath = repository.FullPath.Replace($"{repository.Registry.Url}/", "");
+                var repoReference = $"{repository.Registry.Url}/{repoPath}";
                 
-                // Get tags from the repository using the OCI API
-                var response = await _httpClient.GetAsync($"{protocol}://{repository.Registry.Url}/v2/{repoPath}/tags/list");
-                if (!response.IsSuccessStatusCode)
+                // Create oras-dotnet Repository
+                var repositoryOptions = new RepositoryOptions
                 {
-                    return new List<Models.Tag>();
-                }
-                
-                var content = await response.Content.ReadAsStringAsync();
-                var tagList = JsonConvert.DeserializeObject<TagList>(content);
-                
-                if (tagList?.Tags == null)
-                {
-                    return new List<Models.Tag>();
-                }
+                    Reference = Reference.Parse(repoReference),
+                    Client = client,
+                    PlainHttp = !repository.Registry.IsSecure
+                };
+                var orasRepo = new OrasProject.Oras.Registry.Remote.Repository(repositoryOptions);
                 
                 var resultTags = new List<Models.Tag>();
                 
-                foreach (var tagName in tagList.Tags)
+                // Use oras-dotnet Repository.ListTagsAsync() to get tags
+                await foreach (var tagName in orasRepo.ListTagsAsync())
                 {
                     try
                     {
-                        // Get manifest for this tag to get the digest
-                        _httpClient.DefaultRequestHeaders.Accept.Clear();
-                        _httpClient.DefaultRequestHeaders.Accept.Add(
-                            new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
-                        
-                        var manifestResponse = await _httpClient.GetAsync(
-                            $"{protocol}://{repository.Registry.Url}/v2/{repoPath}/manifests/{tagName}");
-                        
-                        if (!manifestResponse.IsSuccessStatusCode)
-                        {
-                            continue;
-                        }
-                        
-                        var digest = manifestResponse.Headers.GetValues("Docker-Content-Digest").FirstOrDefault() ?? "";
+                        // Use oras-dotnet Repository.ResolveAsync() to get manifest descriptor
+                        var descriptor = await orasRepo.ResolveAsync(tagName);
                         
                         // Create tag object
                         var tag = new Models.Tag
@@ -233,7 +235,7 @@ namespace OrasProject.OrasDesktop.Services
                             Name = tagName,
                             Repository = repository,
                             CreatedAt = DateTimeOffset.Now, // API doesn't provide creation time
-                            Digest = digest
+                            Digest = descriptor.Digest
                         };
                         
                         resultTags.Add(tag);
