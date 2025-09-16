@@ -13,6 +13,74 @@ Key features:
 - List repositories and tags
 - Manage manifests
 - Copy artifacts between registries
+### oras-dotnet (v0.3.0) Capability Summary & Intended Desktop Usage
+
+The public APIs (summarized from README & examples) enable end‑to‑end artifact lifecycle:
+
+| Capability | oras-dotnet Concept / Likely API | Intended UI Usage |
+|------------|----------------------------------|-------------------|
+| Auth | Client configuration with registry credentials (basic / anonymous). | Login dialog -> create a client instance per registry. |
+| List Repositories | Registry catalog enumeration (e.g., `ListRepositoriesAsync` or similar). | Populate TreeView root nodes. |
+| List Tags | Repository tag listing (e.g., `ListTagsAsync(repo)` with paging). | Populate tag ListBox when a repository selected. |
+| Fetch Manifest | Get manifest descriptor + JSON (e.g., `GetManifestAsync(repo, reference)` returning bytes/stream + descriptor). | Display highlighted JSON; extract digests for click navigation. |
+| Fetch Blob / Layer | `GetBlobAsync(repo, digest)` (stream). | When user clicks a digest referencing config/layer manifest, show its JSON (if JSON media type) else show metadata placeholder. |
+| Copy Artifact | High-level copy API (example: copy artifact between repositories). | Copy button executes async copy to target registry/repo/tag. |
+| Push Artifact/Image | High-level push APIs (image or generic artifact). | (Future) Potential upload feature; not in current MVP. |
+| Delete Manifest | `DeleteAsync(repo, digest)` (common registry operation). | Delete button for selected manifest/tag (tag->resolve digest then delete). |
+| Referrers | Attach or list referrers. | (Future) Could display supply chain provenance (not MVP). |
+
+Assumptions (to verify when integrating actual package):
+1. APIs are asynchronous and accept `CancellationToken`.
+2. Listing supports pagination; we'll implement a simple eager fetch first, then refine if large.
+3. Manifest retrieval returns raw JSON bytes; we will pretty-print and syntax highlight.
+4. Media types follow OCI image & artifact spec; digest clickable detection is regex based: `sha256:[a-f0-9]{64}`.
+
+Planned Wrapper Abstractions (Service Layer):
+```
+public interface IOrasRegistryService {
+  Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct);
+  Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct);
+  Task<ManifestResult> GetManifestByTagAsync(string repository, string tag, CancellationToken ct);
+  Task<ManifestResult> GetManifestByDigestAsync(string repository, string digest, CancellationToken ct);
+  Task DeleteManifestAsync(string repository, string digest, CancellationToken ct);
+  Task CopyAsync(CopyRequest request, IProgress<CopyProgress>? progress, CancellationToken ct);
+}
+
+public record ManifestResult(string Digest, string MediaType, string Json, IReadOnlyList<string> ReferencedDigests);
+public record CopyRequest(string SourceRepository, string Reference, string TargetRepository, string? TargetTag);
+public record CopyProgress(string Stage, long? Completed, long? Total);
+```
+
+JSON Digest Extraction Strategy:
+1. Parse JSON with `System.Text.Json` for fields named `digest`.
+2. Additionally run regex for any stray digests only inside quoted strings to ensure highlight.
+
+Syntax Highlighting Plan:
+Use existing `JsonHighlightService` (if adaptable) or integrate a lightweight tokenization: parse JSON -> produce spans styled by token type (braces, property names, strings, numbers, punctuation). Digests rendered as Hyperlink (Button styled like text) to enable click.
+
+Threading & Performance Notes:
+* All network calls off UI thread (async/await). UI updates marshalled back via Avalonia dispatcher if needed.
+* Large manifests (e.g., SBOM) handled streaming -> buffer to string; we monitor size and truncate display > 2 MB with prompt to open externally (future enhancement).
+
+Error Handling Mapping:
+| Error Case | User Feedback |
+|------------|---------------|
+| Auth failure | Show login dialog again with message "Authentication failed". |
+| 404 repo/tag | InfoBar style message: "Not found". |
+| Network timeout | Retry option (button) with exponential backoff (future). |
+| Delete denied | Display registry response status. |
+
+Security Considerations:
+* Credentials only kept in-memory for session; no persistence (MVP).
+* Avoid logging sensitive tokens.
+
+Open Questions / To Validate During Implementation:
+1. Exact method names & namespaces in `OrasProject.Oras` (will inspect after adding package).
+2. Whether copy requires constructing descriptors manually or high-level copy exists (examples suggest high-level API). If absent, we will fallback to: pull manifest+blobs then push to target.
+3. Delete semantics: confirm digest vs tag deletion (will resolve tag to digest first then delete digest).
+
+Planned Next Step: Add package and inspect concrete types to finalize service implementation signatures.
+
 
 ## Avalonia UI
 
@@ -110,6 +178,16 @@ OCI registries typically require authentication, which can be handled through:
 - Basic authentication (username/password)
 - Bearer tokens
 - Docker credential helpers
+ - Anonymous (no credentials)
+
+Application Requirement: Support exactly three modes selectable by user:
+1. Anonymous (default, send no Authorization header)
+2. Basic (Base64 username:password)
+3. Bearer (Authorization: Bearer <token>)
+
+Validation Strategy:
+* Perform a `GET /v2/` ping after initializing connection.
+* If 401 with WWW-Authenticate for bearer and user selected bearer without token -> prompt.
 
 ### Manifest Format
 

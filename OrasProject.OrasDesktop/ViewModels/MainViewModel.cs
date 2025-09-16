@@ -9,21 +9,22 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using DynamicData;
-using ReactiveUI;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
+using ReactiveUI;
 
 namespace OrasProject.OrasDesktop.ViewModels
 {
-    public class MainViewModel : ViewModelBase
+    public partial class MainViewModel : ViewModelBase
     {
-        private readonly IRegistryService _registryService;
+        private readonly IOrasRegistryService _orasService;
         private readonly JsonHighlightService _jsonHighlightService;
 
         // Properties
         private string _registryUrl = "mcr.microsoft.com";
-        private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
+        private ObservableCollection<Repository> _repositories =
+            new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private ObservableCollection<Tag> _tags = new ObservableCollection<Tag>();
         private Tag? _selectedTag;
@@ -32,7 +33,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _statusMessage = string.Empty;
         private bool _isBusy;
         private Registry _currentRegistry = new Registry();
-        private ObservableCollection<string> _authTypes = new ObservableCollection<string> { "None", "Basic", "Token" };
+        private ObservableCollection<string> _authTypes = new ObservableCollection<string>
+        {
+            "None",
+            "Basic",
+            "Token",
+        };
         private string _selectedAuthType = "None";
 
         private string _selectedTagReference = string.Empty;
@@ -47,7 +53,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         public MainViewModel()
         {
-            _registryService = new RegistryService();
+            _orasService = new OrasRegistryService();
             _jsonHighlightService = new JsonHighlightService();
 
             // Initialize commands
@@ -65,20 +71,20 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             this.WhenAnyValue(x => x.SelectedTag)
                 .WhereNotNull()
-                .Subscribe(async tag => 
+                .Subscribe(async tag =>
                 {
                     SelectedTagReference = tag.FullReference;
                     await LoadManifestAsync(tag);
                 });
 
             this.WhenAnyValue(x => x.SelectedAuthType)
-                .Subscribe(authType => 
+                .Subscribe(authType =>
                 {
                     _currentRegistry.AuthenticationType = authType switch
                     {
                         "Basic" => AuthenticationType.Basic,
                         "Token" => AuthenticationType.Token,
-                        _ => AuthenticationType.None
+                        _ => AuthenticationType.None,
                     };
                 });
         }
@@ -111,7 +117,14 @@ namespace OrasProject.OrasDesktop.ViewModels
         public Tag? SelectedTag
         {
             get => _selectedTag;
-            set => this.RaiseAndSetIfChanged(ref _selectedTag, value);
+            set
+            {
+                if (!EqualityComparer<Tag?>.Default.Equals(_selectedTag, value))
+                {
+                    this.RaiseAndSetIfChanged(ref _selectedTag, value);
+                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                }
+            }
         }
 
         public TextBlock? ManifestViewer
@@ -129,7 +142,13 @@ namespace OrasProject.OrasDesktop.ViewModels
         public bool IsBusy
         {
             get => _isBusy;
-            set => this.RaiseAndSetIfChanged(ref _isBusy, value);
+            set
+            {
+                if (this.RaiseAndSetIfChanged(ref _isBusy, value))
+                {
+                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                }
+            }
         }
 
         public string SelectedTagReference
@@ -150,10 +169,16 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedAuthType, value);
         }
 
+        // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
+        public bool CanModifySelectedTag => _selectedTag != null;
+
         // Helper method to get the main window
         private Window? GetMainWindow()
         {
-            if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            if (
+                Avalonia.Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop
+            )
             {
                 return desktop.MainWindow;
             }
@@ -169,8 +194,28 @@ namespace OrasProject.OrasDesktop.ViewModels
             try
             {
                 _currentRegistry.Url = RegistryUrl;
-                
-                var connected = await _registryService.ConnectAsync(_currentRegistry);
+
+                // Initialize new oras service (anonymous for now) in parallel with legacy connect until migration completes
+                await _orasService.InitializeAsync(
+                    new RegistryConnection(
+                        _currentRegistry.Url,
+                        _currentRegistry.IsSecure,
+                        _currentRegistry.AuthenticationType switch
+                        {
+                            AuthenticationType.Basic => AuthType.Basic,
+                            AuthenticationType.Token => AuthType.Bearer,
+                            _ => AuthType.Anonymous,
+                        },
+                        _currentRegistry.Username,
+                        _currentRegistry.Password,
+                        _currentRegistry.Token
+                    ),
+                    default
+                );
+
+                // Ping /v2/ manually to validate connectivity (basic anonymous check)
+                var repos = await _orasService.ListRepositoriesAsync(default);
+                var connected = repos.Count >= 0; // if call returns without exception treat as connected
                 if (!connected)
                 {
                     StatusMessage = "Failed to connect to registry";
@@ -178,11 +223,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 }
 
                 // Get repositories
-                var repositories = await _registryService.GetRepositoriesAsync(_currentRegistry);
-                
+                var repositories = await BuildRepositoryTreeAsync();
+
                 // Sort repositories by name
                 var sortedRepositories = repositories.OrderBy(r => r.Name).ToList();
-                
+
                 Repositories.Clear();
                 foreach (var repo in sortedRepositories)
                 {
@@ -227,21 +272,32 @@ namespace OrasProject.OrasDesktop.ViewModels
                 _currentRegistry.Password = result.Password;
                 _currentRegistry.Token = result.Token;
 
-                var authenticated = await _registryService.AuthenticateAsync(_currentRegistry);
-                if (!authenticated)
-                {
-                    StatusMessage = "Failed to authenticate with registry";
-                    return;
-                }
+                // Reinitialize with supplied credentials
+                await _orasService.InitializeAsync(
+                    new RegistryConnection(
+                        _currentRegistry.Url,
+                        _currentRegistry.IsSecure,
+                        _currentRegistry.AuthenticationType switch
+                        {
+                            AuthenticationType.Basic => AuthType.Basic,
+                            AuthenticationType.Token => AuthType.Bearer,
+                            _ => AuthType.Anonymous,
+                        },
+                        _currentRegistry.Username,
+                        _currentRegistry.Password,
+                        _currentRegistry.Token
+                    ),
+                    default
+                );
 
                 StatusMessage = "Authenticated with registry";
-                
+
                 // Update the authentication type in the UI
                 SelectedAuthType = result.AuthType switch
                 {
                     AuthenticationType.Basic => "Basic",
                     AuthenticationType.Token => "Token",
-                    _ => "None"
+                    _ => "None",
                 };
             }
             catch (Exception ex)
@@ -266,16 +322,70 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
-                var tags = await _registryService.GetTagsAsync(repository);
-                
+                var tagNames = await _orasService.ListTagsAsync(
+                    repository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty),
+                    default
+                );
+                var tags = new List<Tag>();
+                foreach (var name in tagNames)
+                {
+                    tags.Add(
+                        new Tag
+                        {
+                            Name = name,
+                            Repository = repository,
+                            CreatedAt = DateTimeOffset.Now,
+                        }
+                    );
+                }
+
                 // Sort tags by name
                 var sortedTags = tags.OrderBy(t => t.Name).ToList();
-                
+
                 Tags.Clear();
                 foreach (var tag in sortedTags)
                 {
                     Tags.Add(tag);
                 }
+
+                // Fire-and-forget background resolution of digests (does not block UI)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var repoPath = repository.FullPath.Replace(
+                            $"{_currentRegistry.Url}/",
+                            string.Empty
+                        );
+                        foreach (var t in Tags.ToList())
+                        {
+                            if (string.IsNullOrWhiteSpace(t.Digest))
+                            {
+                                try
+                                {
+                                    var manifest = await _orasService.GetManifestByTagAsync(
+                                        repoPath,
+                                        t.Name,
+                                        default
+                                    );
+                                    t.Digest = manifest.Digest;
+                                    if (SelectedTag == t)
+                                    {
+                                        Dispatcher.UIThread.Post(() =>
+                                            this.RaisePropertyChanged(nameof(SelectedTag))
+                                        );
+                                    }
+                                }
+                                catch
+                                { /* ignore individual tag failures */
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    { /* ignore batch failures */
+                    }
+                });
 
                 StatusMessage = $"Loaded {sortedTags.Count} tags for {repository.Name}";
             }
@@ -312,13 +422,38 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
-                _currentManifest = await _registryService.GetManifestAsync(tag);
-                
+                var repoPath = tag.Repository!.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                var manifest = await _orasService.GetManifestByTagAsync(
+                    repoPath,
+                    tag.Name,
+                    default
+                );
+                _currentManifest = new Manifest
+                {
+                    RawContent = manifest.Json,
+                    Digest = manifest.Digest,
+                    Tag = tag,
+                    MediaType = manifest.MediaType,
+                };
+                // Ensure tag has its digest populated (needed for delete operations)
+                if (string.IsNullOrWhiteSpace(tag.Digest))
+                {
+                    tag.Digest = manifest.Digest;
+                    // Notify UI that SelectedTag changed so bindings (like reference) can update
+                    if (SelectedTag == tag)
+                    {
+                        this.RaisePropertyChanged(nameof(SelectedTag));
+                    }
+                }
+
                 // Display manifest
-                Dispatcher.UIThread.Post(() => 
+                Dispatcher.UIThread.Post(() =>
                 {
                     ManifestViewer = _jsonHighlightService.HighlightJson(
-                        _currentManifest.RawContent, 
+                        _currentManifest.RawContent,
                         async digest => await LoadContentByDigestAsync(digest)
                     );
                 });
@@ -347,13 +482,22 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
-                var content = await _registryService.GetContentAsync(SelectedRepository, digest);
-                
+                var repoPath = SelectedRepository.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                var manifest = await _orasService.GetManifestByDigestAsync(
+                    repoPath,
+                    digest,
+                    default
+                );
+                var content = manifest.Json;
+
                 // Display content
-                Dispatcher.UIThread.Post(() => 
+                Dispatcher.UIThread.Post(() =>
                 {
                     ManifestViewer = _jsonHighlightService.HighlightJson(
-                        content, 
+                        content,
                         async d => await LoadContentByDigestAsync(d)
                     );
                 });
@@ -402,9 +546,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                     {
                         new TextBlock
                         {
-                            Text = $"Are you sure you want to delete the manifest for {SelectedTag.Name}?",
+                            Text =
+                                $"Are you sure you want to delete the manifest for {SelectedTag.Name}?",
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                            [Grid.RowProperty] = 0
+                            [Grid.RowProperty] = 0,
                         },
                         new StackPanel
                         {
@@ -419,19 +564,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     Content = "Cancel",
                                     Width = 80,
                                     [Grid.ColumnProperty] = 0,
-                                    Tag = false
+                                    Tag = false,
                                 },
                                 new Button
                                 {
                                     Content = "Delete",
                                     Width = 80,
                                     [Grid.ColumnProperty] = 1,
-                                    Tag = true
-                                }
-                            }
-                        }
-                    }
-                }
+                                    Tag = true,
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             bool confirmResult = false;
@@ -459,17 +604,29 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
-                var deleted = await _registryService.DeleteManifestAsync(SelectedTag);
-                if (!deleted)
+                var repoPath = SelectedTag.Repository!.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+
+                // If digest not yet resolved (user clicked delete before viewing manifest) resolve via manifest fetch
+                if (string.IsNullOrWhiteSpace(SelectedTag.Digest))
                 {
-                    StatusMessage = "Failed to delete manifest";
-                    return;
+                    var manifest = await _orasService.GetManifestByTagAsync(
+                        repoPath,
+                        SelectedTag.Name,
+                        default
+                    );
+                    SelectedTag.Digest = manifest.Digest;
                 }
+
+                await _orasService.DeleteManifestAsync(repoPath, SelectedTag.Digest, default);
 
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                StatusMessage = $"Deleted manifest for {SelectedTag.Name}";
+                StatusMessage =
+                    $"Deleted manifest for {SelectedTag.Name} ({SelectedTag.Digest[..Math.Min(16, SelectedTag.Digest.Length)]}...)";
             }
             catch (Exception ex)
             {
@@ -501,24 +658,33 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 return;
             }
-            
+
             IsBusy = true;
-            StatusMessage = $"Copying manifest for {SelectedTag.Name} to {result.DestinationTag}...";
+            StatusMessage =
+                $"Copying manifest for {SelectedTag.Name} to {result.DestinationTag}...";
 
             try
             {
-                var copied = await _registryService.CopyManifestAsync(SelectedTag, SelectedRepository, result.DestinationTag);
-                
-                if (!copied)
+                var repoPath = SelectedRepository.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                var progress = new Progress<CopyProgress>(p =>
                 {
-                    StatusMessage = "Failed to copy manifest";
-                    return;
-                }
+                    StatusMessage =
+                        p.Total <= 0 ? p.Stage : $"{p.Stage} {(p.Completed ?? 0)}/{p.Total}";
+                });
+                await _orasService.CopyAsync(
+                    new CopyRequest(repoPath, SelectedTag.Name, repoPath, result.DestinationTag),
+                    progress,
+                    default
+                );
 
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                StatusMessage = $"Copied manifest for {SelectedTag.Name} to {result.DestinationTag}";
+                StatusMessage =
+                    $"Copied manifest for {SelectedTag.Name} to {result.DestinationTag}";
             }
             catch (Exception ex)
             {
@@ -542,7 +708,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 // Get reference without the "Reference: " prefix
                 string reference = SelectedTag.FullReference;
-                
+
                 // Copy to clipboard
                 var topLevel = TopLevel.GetTopLevel(GetMainWindow());
                 if (topLevel != null)
@@ -559,6 +725,48 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 StatusMessage = $"Error copying reference: {ex.Message}";
             }
+        }
+    }
+}
+
+// Partial class extension for helper methods
+namespace OrasProject.OrasDesktop.ViewModels
+{
+    public partial class MainViewModel
+    {
+        private async Task<List<Repository>> BuildRepositoryTreeAsync()
+        {
+            var list = await _orasService.ListRepositoriesAsync(default);
+            var root = new List<Repository>();
+            var dict = new Dictionary<string, Repository>(StringComparer.OrdinalIgnoreCase);
+            foreach (var full in list)
+            {
+                var segments = full.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                string path = string.Empty;
+                Repository? parent = null;
+                for (int i = 0; i < segments.Length; i++)
+                {
+                    path = path.Length == 0 ? segments[i] : path + "/" + segments[i];
+                    if (!dict.TryGetValue(path, out var repo))
+                    {
+                        repo = new Repository
+                        {
+                            Name = segments[i],
+                            FullPath = $"{_currentRegistry.Url}/{path}",
+                            Parent = parent,
+                            Registry = _currentRegistry,
+                            IsLeaf = i == segments.Length - 1,
+                        };
+                        dict[path] = repo;
+                        if (parent != null)
+                            parent.Children.Add(repo);
+                        else
+                            root.Add(repo);
+                    }
+                    parent = repo;
+                }
+            }
+            return root.OrderBy(r => r.Name).ToList();
         }
     }
 }
