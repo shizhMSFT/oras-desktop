@@ -11,9 +11,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Caching.Memory;
 using OrasProject.OrasDesktop.Models;
+using OrasProject.Oras.Registry.Remote.Auth;
 using OrasProject.Oras.Registry;
 using OrasProject.Oras.Registry.Remote;
-using OrasProject.Oras.Registry.Remote.Auth;
 using OrasProject.Oras.Oci;
 using OrasProject.Oras.Content;
 
@@ -48,11 +48,12 @@ namespace OrasProject.OrasDesktop.Services
                 // Store the registry for later use
                 _registries[registry.Url] = registry;
                 
-                // Configure HTTP protocol based on registry settings
-                string protocol = registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Client to test connection
+                var client = new Client(_httpClient);
+                var testUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/");
+                var request = new HttpRequestMessage(HttpMethod.Get, testUri);
                 
-                // Test the connection with a simple HTTP request
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/");
+                var response = await client.SendAsync(request, default);
                 return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Unauthorized;
             }
             catch (Exception)
@@ -76,30 +77,25 @@ namespace OrasProject.OrasDesktop.Services
 
                 _registries[registry.Url] = registry;
                 
-                // Configure authentication headers based on the authentication type
+                // Use oras-dotnet Client with authentication
+                ICredentialProvider? credentialProvider = null;
+                
                 if (registry.RequiresAuthentication)
                 {
-                    if (registry.AuthenticationType == Models.AuthenticationType.Basic)
+                    var credential = new Credential
                     {
-                        var authBytes = Encoding.ASCII.GetBytes($"{registry.Username}:{registry.Password}");
-                        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                            "Basic", Convert.ToBase64String(authBytes));
-                    }
-                    else if (registry.AuthenticationType == Models.AuthenticationType.Token)
-                    {
-                        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                            "Bearer", registry.Token);
-                    }
-                }
-                else
-                {
-                    _httpClient.DefaultRequestHeaders.Authorization = null;
+                        Username = registry.Username ?? string.Empty,
+                        Password = registry.Password ?? string.Empty,
+                        AccessToken = registry.Token ?? string.Empty
+                    };
+                    credentialProvider = new SingleRegistryCredentialProvider(registry.Url, credential);
                 }
                 
-                // Test authentication
-                string protocol = registry.IsSecure ? "https" : "http";
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/");
+                var client = new Client(_httpClient, credentialProvider);
+                var testUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/");
+                var request = new HttpRequestMessage(HttpMethod.Get, testUri);
                 
+                var response = await client.SendAsync(request, default);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception)
@@ -121,11 +117,24 @@ namespace OrasProject.OrasDesktop.Services
                     }
                 }
 
-                // Configure HTTP protocol based on registry settings
-                string protocol = registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Client for catalog request
+                ICredentialProvider? credentialProvider = null;
+                if (registry.RequiresAuthentication)
+                {
+                    var credential = new Credential
+                    {
+                        Username = registry.Username ?? string.Empty,
+                        Password = registry.Password ?? string.Empty,
+                        AccessToken = registry.Token ?? string.Empty
+                    };
+                    credentialProvider = new SingleRegistryCredentialProvider(registry.Url, credential);
+                }
                 
-                // Get repositories from the registry using the OCI API
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/_catalog");
+                var client = new Client(_httpClient, credentialProvider);
+                var catalogUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/_catalog");
+                var request = new HttpRequestMessage(HttpMethod.Get, catalogUri);
+                
+                var response = await client.SendAsync(request, default);
                 if (!response.IsSuccessStatusCode)
                 {
                     return new List<Models.Repository>();
