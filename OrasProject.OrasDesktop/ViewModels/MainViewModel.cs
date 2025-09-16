@@ -409,12 +409,20 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
                 ManifestContent = _currentManifest.RawContent;
+                
+                // Create a highlighted and selectable text block
+                ManifestViewer = _jsonHighlightService.HighlightJson(
+                    _currentManifest.RawContent,
+                    async (digest) => await LoadContentByDigestAsync(digest)
+                );
 
                 StatusMessage = $"Loaded manifest for {tag.Name}";
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading manifest: {ex.Message}";
+                ManifestContent = string.Empty;
+                ManifestViewer = null;
             }
             finally
             {
@@ -444,12 +452,20 @@ namespace OrasProject.OrasDesktop.ViewModels
                     default
                 );
                 ManifestContent = manifest.Json;
+                
+                // Create a highlighted and selectable text block
+                ManifestViewer = _jsonHighlightService.HighlightJson(
+                    manifest.Json,
+                    async (digestValue) => await LoadContentByDigestAsync(digestValue)
+                );
 
                 StatusMessage = $"Loaded content for {digest}";
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading content: {ex.Message}";
+                ManifestContent = string.Empty;
+                ManifestViewer = null;
             }
             finally
             {
