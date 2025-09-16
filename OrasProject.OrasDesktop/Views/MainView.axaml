@@ -94,18 +94,7 @@
           SelectedItem="{Binding SelectedTag}">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="{Binding Name}" />
-                <TextBlock
-                  FontFamily="Consolas"
-                  FontSize="10"
-                  Foreground="Gray"
-                  IsVisible="{Binding Digest}">
-                  <TextBlock.Text>
-                    <Binding Path="Digest" />
-                  </TextBlock.Text>
-                </TextBlock>
-              </StackPanel>
+              <TextBlock Text="{Binding Name}" />
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
@@ -175,7 +164,15 @@
           BorderBrush="LightGray"
           BorderThickness="1">
           <ScrollViewer>
-            <ContentControl Content="{Binding ManifestViewer}" />
+            <TextBox
+              AcceptsReturn="True"
+              Background="Transparent"
+              BorderThickness="0"
+              FontFamily="Consolas"
+              IsReadOnly="True"
+              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+              ScrollViewer.VerticalScrollBarVisibility="Auto"
+              Text="{Binding ManifestContent}" />
           </ScrollViewer>
         </Border>
       </Grid>

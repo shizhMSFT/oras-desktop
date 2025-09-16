@@ -42,6 +42,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _selectedAuthType = "None";
 
         private string _selectedTagReference = string.Empty;
+        private string _manifestContent = string.Empty;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -155,6 +156,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _selectedTagReference;
             set => this.RaiseAndSetIfChanged(ref _selectedTagReference, value);
+        }
+
+        public string ManifestContent
+        {
+            get => _manifestContent;
+            set => this.RaiseAndSetIfChanged(ref _manifestContent, value);
         }
 
         public ObservableCollection<string> AuthTypes
@@ -348,44 +355,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     Tags.Add(tag);
                 }
 
-                // Fire-and-forget background resolution of digests (does not block UI)
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var repoPath = repository.FullPath.Replace(
-                            $"{_currentRegistry.Url}/",
-                            string.Empty
-                        );
-                        foreach (var t in Tags.ToList())
-                        {
-                            if (string.IsNullOrWhiteSpace(t.Digest))
-                            {
-                                try
-                                {
-                                    var manifest = await _orasService.GetManifestByTagAsync(
-                                        repoPath,
-                                        t.Name,
-                                        default
-                                    );
-                                    t.Digest = manifest.Digest;
-                                    if (SelectedTag == t)
-                                    {
-                                        Dispatcher.UIThread.Post(() =>
-                                            this.RaisePropertyChanged(nameof(SelectedTag))
-                                        );
-                                    }
-                                }
-                                catch
-                                { /* ignore individual tag failures */
-                                }
-                            }
-                        }
-                    }
-                    catch
-                    { /* ignore batch failures */
-                    }
-                });
+                // Digest resolution removed for performance; resolved only when required for delete.
 
                 StatusMessage = $"Loaded {sortedTags.Count} tags for {repository.Name}";
             }
@@ -438,25 +408,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     Tag = tag,
                     MediaType = manifest.MediaType,
                 };
-                // Ensure tag has its digest populated (needed for delete operations)
-                if (string.IsNullOrWhiteSpace(tag.Digest))
-                {
-                    tag.Digest = manifest.Digest;
-                    // Notify UI that SelectedTag changed so bindings (like reference) can update
-                    if (SelectedTag == tag)
-                    {
-                        this.RaisePropertyChanged(nameof(SelectedTag));
-                    }
-                }
-
-                // Display manifest
-                Dispatcher.UIThread.Post(() =>
-                {
-                    ManifestViewer = _jsonHighlightService.HighlightJson(
-                        _currentManifest.RawContent,
-                        async digest => await LoadContentByDigestAsync(digest)
-                    );
-                });
+                ManifestContent = _currentManifest.RawContent;
 
                 StatusMessage = $"Loaded manifest for {tag.Name}";
             }
@@ -491,16 +443,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     digest,
                     default
                 );
-                var content = manifest.Json;
-
-                // Display content
-                Dispatcher.UIThread.Post(() =>
-                {
-                    ManifestViewer = _jsonHighlightService.HighlightJson(
-                        content,
-                        async d => await LoadContentByDigestAsync(d)
-                    );
-                });
+                ManifestContent = manifest.Json;
 
                 StatusMessage = $"Loaded content for {digest}";
             }
@@ -609,24 +552,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                     string.Empty
                 );
 
-                // If digest not yet resolved (user clicked delete before viewing manifest) resolve via manifest fetch
-                if (string.IsNullOrWhiteSpace(SelectedTag.Digest))
-                {
-                    var manifest = await _orasService.GetManifestByTagAsync(
-                        repoPath,
-                        SelectedTag.Name,
-                        default
-                    );
-                    SelectedTag.Digest = manifest.Digest;
-                }
-
-                await _orasService.DeleteManifestAsync(repoPath, SelectedTag.Digest, default);
+                var manifest = await _orasService.GetManifestByTagAsync(
+                    repoPath,
+                    SelectedTag.Name,
+                    default
+                );
+                await _orasService.DeleteManifestAsync(repoPath, manifest.Digest, default);
 
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                StatusMessage =
-                    $"Deleted manifest for {SelectedTag.Name} ({SelectedTag.Digest[..Math.Min(16, SelectedTag.Digest.Length)]}...)";
+                StatusMessage = $"Deleted manifest for {SelectedTag.Name}";
             }
             catch (Exception ex)
             {
