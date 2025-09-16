@@ -336,8 +336,9 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[repository.Registry.Url] = repository.Registry;
 
-                // Use oras-dotnet Client for blob request
-                ICredentialProvider? credentialProvider = null;
+                // Use oras-dotnet Repository for getting blob content
+                IClient client;
+                
                 if (repository.Registry.RequiresAuthentication)
                 {
                     var credential = new Credential
@@ -346,26 +347,37 @@ namespace OrasProject.OrasDesktop.Services
                         Password = repository.Registry.Password ?? string.Empty,
                         AccessToken = repository.Registry.Token ?? string.Empty
                     };
-                    credentialProvider = new SingleRegistryCredentialProvider(repository.Registry.Url, credential);
+                    var credentialProvider = new SingleRegistryCredentialProvider(repository.Registry.Url, credential);
+                    client = new Client(_httpClient, credentialProvider);
                 }
-                
-                var client = new Client(_httpClient, credentialProvider);
-                
+                else
+                {
+                    client = new Client(_httpClient);
+                }
+
                 // Get repository name without registry URL
                 var repoPath = repository.FullPath.Replace($"{repository.Registry.Url}/", "");
+                var repoReference = $"{repository.Registry.Url}/{repoPath}";
                 
-                // Get blob (content) for this digest using the OCI API
-                var blobUri = new Uri($"{(repository.Registry.IsSecure ? "https" : "http")}://{repository.Registry.Url}/v2/{repoPath}/blobs/{digest}");
-                var request = new HttpRequestMessage(HttpMethod.Get, blobUri);
-                
-                var response = await client.SendAsync(request, default);
-                
-                if (!response.IsSuccessStatusCode)
+                // Create oras-dotnet Repository
+                var repositoryOptions = new RepositoryOptions
                 {
-                    return string.Empty;
-                }
+                    Reference = Reference.Parse(repoReference),
+                    Client = client,
+                    PlainHttp = !repository.Registry.IsSecure
+                };
+                var orasRepo = new OrasProject.Oras.Registry.Remote.Repository(repositoryOptions);
                 
-                return await response.Content.ReadAsStringAsync();
+                // Use oras-dotnet BlobStore.FetchAsync() to get blob content directly by digest
+                var blobStore = new BlobStore(orasRepo);
+                var (descriptor, contentStream) = await blobStore.FetchAsync(digest);
+                
+                using (contentStream)
+                {
+                    using var memoryStream = new MemoryStream();
+                    await contentStream.CopyToAsync(memoryStream);
+                    return Encoding.UTF8.GetString(memoryStream.ToArray());
+                }
             }
             catch (Exception)
             {
