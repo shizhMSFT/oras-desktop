@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Controls.Primitives;
 
 namespace OrasProject.OrasDesktop.Services
 {
@@ -25,10 +26,10 @@ namespace OrasProject.OrasDesktop.Services
         /// </summary>
         /// <param name="json">The JSON text to highlight</param>
         /// <param name="digestClickCallback">Callback for when a digest link is clicked</param>
-        /// <returns>A TextBlock with highlighted text</returns>
+        /// <returns>A SelectableTextBlock with highlighted text</returns>
         public TextBlock HighlightJson(string json, Action<string> digestClickCallback)
         {
-            var textBlock = new TextBlock();
+            var textBlock = new SelectableTextBlock();
             var inlineCollection = new InlineCollection();
             textBlock.Inlines = inlineCollection;
 

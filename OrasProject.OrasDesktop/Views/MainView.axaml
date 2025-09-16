@@ -163,16 +163,13 @@
           Grid.Row="3"
           BorderBrush="LightGray"
           BorderThickness="1">
-          <ScrollViewer>
-            <TextBox
-              AcceptsReturn="True"
+          <ScrollViewer
+            HorizontalScrollBarVisibility="Auto"
+            VerticalScrollBarVisibility="Auto">
+            <ContentControl
+              Content="{Binding ManifestViewer}"
               Background="Transparent"
-              BorderThickness="0"
-              FontFamily="Consolas"
-              IsReadOnly="True"
-              ScrollViewer.HorizontalScrollBarVisibility="Auto"
-              ScrollViewer.VerticalScrollBarVisibility="Auto"
-              Text="{Binding ManifestContent}" />
+              FontFamily="Consolas" />
           </ScrollViewer>
         </Border>
       </Grid>
