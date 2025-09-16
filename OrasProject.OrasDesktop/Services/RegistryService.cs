@@ -452,113 +452,73 @@ namespace OrasProject.OrasDesktop.Services
                     return false;
                 }
 
-                // Get source manifest
-                var manifest = await GetManifestAsync(sourceTag);
-                if (manifest.Content == null)
+                // Store registry info
+                _registries[sourceTag.Repository.Registry.Url] = sourceTag.Repository.Registry;
+                _registries[destinationRepository.Registry.Url] = destinationRepository.Registry;
+
+                // Setup credentials for source repository
+                ICredentialProvider? sourceCredentialProvider = null;
+                if (sourceTag.Repository.Registry.RequiresAuthentication)
                 {
-                    return false;
+                    var sourceCredential = new Credential
+                    {
+                        Username = sourceTag.Repository.Registry.Username ?? string.Empty,
+                        Password = sourceTag.Repository.Registry.Password ?? string.Empty,
+                        AccessToken = sourceTag.Repository.Registry.Token ?? string.Empty
+                    };
+                    sourceCredentialProvider = new SingleRegistryCredentialProvider(sourceTag.Repository.Registry.Url, sourceCredential);
                 }
-                
-                // Configure HTTP protocol based on registry settings
-                string srcProtocol = sourceTag.Repository.Registry.IsSecure ? "https" : "http";
-                string dstProtocol = destinationRepository.Registry.IsSecure ? "https" : "http";
-                
-                // Get source and destination repository names without registry URL
+
+                // Setup credentials for destination repository  
+                ICredentialProvider? destCredentialProvider = null;
+                if (destinationRepository.Registry.RequiresAuthentication)
+                {
+                    var destCredential = new Credential
+                    {
+                        Username = destinationRepository.Registry.Username ?? string.Empty,
+                        Password = destinationRepository.Registry.Password ?? string.Empty,
+                        AccessToken = destinationRepository.Registry.Token ?? string.Empty
+                    };
+                    destCredentialProvider = new SingleRegistryCredentialProvider(destinationRepository.Registry.Url, destCredential);
+                }
+
+                // Create source repository instance
+                var sourceClient = new Client(_httpClient, sourceCredentialProvider);
                 var sourceRepoPath = sourceTag.Repository.FullPath.Replace($"{sourceTag.Repository.Registry.Url}/", "");
+                var sourceReference = Reference.Parse($"{sourceTag.Repository.Registry.Url}/{sourceRepoPath}");
+                var sourceOptions = new RepositoryOptions
+                {
+                    Reference = sourceReference,
+                    Client = sourceClient,
+                    PlainHttp = !sourceTag.Repository.Registry.IsSecure
+                };
+                var sourceRepo = new OrasProject.Oras.Registry.Remote.Repository(sourceOptions);
+                var sourceManifestStore = new ManifestStore(sourceRepo);
+
+                // Create destination repository instance
+                var destClient = new Client(_httpClient, destCredentialProvider);
                 var destRepoPath = destinationRepository.FullPath.Replace($"{destinationRepository.Registry.Url}/", "");
-                
-                // First, copy all the layers
-                foreach (var layer in manifest.Layers)
+                var destReference = Reference.Parse($"{destinationRepository.Registry.Url}/{destRepoPath}");
+                var destOptions = new RepositoryOptions
                 {
-                    // Get the layer content
-                    var layerResponse = await _httpClient.GetAsync(
-                        $"{srcProtocol}://{sourceTag.Repository.Registry.Url}/v2/{sourceRepoPath}/blobs/{layer.Digest}");
-                    
-                    if (!layerResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                    
-                    var layerContent = await layerResponse.Content.ReadAsByteArrayAsync();
-                    
-                    // Upload the layer to the destination
-                    var layerContentStream = new MemoryStream(layerContent);
-                    
-                    // Start upload session
-                    var uploadResponse = await _httpClient.PostAsync(
-                        $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/blobs/uploads/",
-                        null);
-                    
-                    if (!uploadResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                    
-                    // Get the upload location
-                    var location = uploadResponse.Headers.Location;
-                    if (location == null)
-                    {
-                        continue;
-                    }
-                    
-                    // Upload the content
-                    var uploadRequest = new HttpRequestMessage(HttpMethod.Put, location + $"&digest={layer.Digest}");
-                    uploadRequest.Content = new StreamContent(layerContentStream);
-                    uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(layer.MediaType);
-                    
-                    var uploadCompleteResponse = await _httpClient.SendAsync(uploadRequest);
-                    if (!uploadCompleteResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                }
+                    Reference = destReference,
+                    Client = destClient,
+                    PlainHttp = !destinationRepository.Registry.IsSecure
+                };
+                var destRepo = new OrasProject.Oras.Registry.Remote.Repository(destOptions);
+                var destManifestStore = new ManifestStore(destRepo);
+
+                // Use oras-dotnet high-level APIs to copy manifest
+                // 1. Fetch manifest from source using tag name
+                var (descriptor, manifestStream) = await sourceManifestStore.FetchAsync(sourceTag.Name);
                 
-                // Upload the config
-                if (manifest.Config != null)
+                // 2. Push manifest to destination with new tag
+                using (manifestStream)
                 {
-                    var configResponse = await _httpClient.GetAsync(
-                        $"{srcProtocol}://{sourceTag.Repository.Registry.Url}/v2/{sourceRepoPath}/blobs/{manifest.Config.Digest}");
-                    
-                    if (configResponse.IsSuccessStatusCode)
-                    {
-                        var configContent = await configResponse.Content.ReadAsByteArrayAsync();
-                        var configContentStream = new MemoryStream(configContent);
-                        
-                        // Start upload session
-                        var uploadResponse = await _httpClient.PostAsync(
-                            $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/blobs/uploads/",
-                            null);
-                        
-                        if (uploadResponse.IsSuccessStatusCode)
-                        {
-                            // Get the upload location
-                            var location = uploadResponse.Headers.Location;
-                            if (location != null)
-                            {
-                                // Upload the content
-                                var uploadRequest = new HttpRequestMessage(HttpMethod.Put, location + $"&digest={manifest.Config.Digest}");
-                                uploadRequest.Content = new StreamContent(configContentStream);
-                                uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(manifest.Config.MediaType);
-                                
-                                await _httpClient.SendAsync(uploadRequest);
-                            }
-                        }
-                    }
+                    await destManifestStore.PushAsync(descriptor, manifestStream, destinationTag);
                 }
-                
-                // Finally, upload the manifest with the new tag
-                var manifestContent = manifest.RawContent;
-                
-                var manifestRequest = new HttpRequestMessage(
-                    HttpMethod.Put,
-                    $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/manifests/{destinationTag}");
-                
-                manifestRequest.Content = new StringContent(manifestContent);
-                manifestRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(manifest.MediaType);
-                
-                var manifestResponse = await _httpClient.SendAsync(manifestRequest);
-                
-                return manifestResponse.IsSuccessStatusCode;
+
+                return true;
             }
             catch (Exception)
             {
