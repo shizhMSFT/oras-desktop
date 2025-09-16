@@ -170,14 +170,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 _currentRegistry.Url = RegistryUrl;
                 
-                var connected = await _registryService.ConnectAsync(_currentRegistry);
-                if (!connected)
-                {
-                    StatusMessage = "Failed to connect to registry";
-                    return;
-                }
-
-                // Get repositories
+                // Use oras-dotnet Registry.ListRepositoriesAsync() which combines connection test and repository listing
                 var repositories = await _registryService.GetRepositoriesAsync(_currentRegistry);
                 
                 // Sort repositories by name

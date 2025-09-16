@@ -11,13 +11,6 @@ namespace OrasProject.OrasDesktop.Services
     public interface IRegistryService
     {
         /// <summary>
-        /// Connect to a registry with the provided URL
-        /// </summary>
-        /// <param name="registry">The registry to connect to</param>
-        /// <returns>True if connection is successful, false otherwise</returns>
-        Task<bool> ConnectAsync(Registry registry);
-
-        /// <summary>
         /// Authenticate with the registry
         /// </summary>
         /// <param name="registry">The registry to authenticate with</param>

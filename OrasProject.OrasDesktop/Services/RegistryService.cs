@@ -41,40 +41,11 @@ namespace OrasProject.OrasDesktop.Services
         }
 
         /// <inheritdoc/>
-        public async Task<bool> ConnectAsync(Models.Registry registry)
-        {
-            try
-            {
-                // Store the registry for later use
-                _registries[registry.Url] = registry;
-                
-                // Use oras-dotnet Client to test connection
-                var client = new Client(_httpClient);
-                var testUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/");
-                var request = new HttpRequestMessage(HttpMethod.Get, testUri);
-                
-                var response = await client.SendAsync(request, default);
-                return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Unauthorized;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <inheritdoc/>
         public async Task<bool> AuthenticateAsync(Models.Registry registry)
         {
             try
             {
-                if (!_registries.ContainsKey(registry.Url))
-                {
-                    if (!await ConnectAsync(registry))
-                    {
-                        return false;
-                    }
-                }
-
+                // Store registry info
                 _registries[registry.Url] = registry;
                 
                 // Use oras-dotnet Client with authentication
@@ -109,13 +80,8 @@ namespace OrasProject.OrasDesktop.Services
         {
             try
             {
-                if (!_registries.ContainsKey(registry.Url))
-                {
-                    if (!await ConnectAsync(registry))
-                    {
-                        return new List<Models.Repository>();
-                    }
-                }
+                // Store registry info
+                _registries[registry.Url] = registry;
 
                 // Use oras-dotnet Client for catalog request
                 ICredentialProvider? credentialProvider = null;
@@ -216,13 +182,8 @@ namespace OrasProject.OrasDesktop.Services
                     return new List<Models.Tag>();
                 }
 
-                if (!_registries.ContainsKey(repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(repository.Registry))
-                    {
-                        return new List<Models.Tag>();
-                    }
-                }
+                // Store registry info
+                _registries[repository.Registry.Url] = repository.Registry;
 
                 // Configure HTTP protocol based on registry settings
                 string protocol = repository.Registry.IsSecure ? "https" : "http";
@@ -302,13 +263,8 @@ namespace OrasProject.OrasDesktop.Services
                     return new Models.Manifest();
                 }
 
-                if (!_registries.ContainsKey(tag.Repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(tag.Repository.Registry))
-                    {
-                        return new Models.Manifest();
-                    }
-                }
+                // Store registry info
+                _registries[tag.Repository.Registry.Url] = tag.Repository.Registry;
 
                 // Use oras-dotnet Client for manifest request
                 ICredentialProvider? credentialProvider = null;
@@ -366,13 +322,8 @@ namespace OrasProject.OrasDesktop.Services
                     return string.Empty;
                 }
 
-                if (!_registries.ContainsKey(repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(repository.Registry))
-                    {
-                        return string.Empty;
-                    }
-                }
+                // Store registry info
+                _registries[repository.Registry.Url] = repository.Registry;
 
                 // Use oras-dotnet Client for blob request
                 ICredentialProvider? credentialProvider = null;
@@ -421,13 +372,8 @@ namespace OrasProject.OrasDesktop.Services
                     return false;
                 }
 
-                if (!_registries.ContainsKey(tag.Repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(tag.Repository.Registry))
-                    {
-                        return false;
-                    }
-                }
+                // Store registry info
+                _registries[tag.Repository.Registry.Url] = tag.Repository.Registry;
 
                 // Use oras-dotnet Client for delete request
                 ICredentialProvider? credentialProvider = null;
