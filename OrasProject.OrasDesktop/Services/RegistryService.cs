@@ -85,7 +85,7 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[registry.Url] = registry;
 
-                // Use oras-dotnet Client for catalog request
+                // Use oras-dotnet Registry.ListRepositoriesAsync() for catalog request
                 ICredentialProvider? credentialProvider = null;
                 if (registry.RequiresAuthentication)
                 {
@@ -99,28 +99,26 @@ namespace OrasProject.OrasDesktop.Services
                 }
                 
                 var client = new Client(_httpClient, credentialProvider);
-                var catalogUri = new Uri($"{(registry.IsSecure ? "https" : "http")}://{registry.Url}/v2/_catalog");
-                var request = new HttpRequestMessage(HttpMethod.Get, catalogUri);
-                
-                var response = await client.SendAsync(request, default);
-                if (!response.IsSuccessStatusCode)
+                var registryOptions = new RepositoryOptions
                 {
-                    return new List<Models.Repository>();
-                }
+                    Reference = new Reference(registry.Url),
+                    Client = client,
+                    PlainHttp = !registry.IsSecure
+                };
+                var orasRegistry = new OrasProject.Oras.Registry.Remote.Registry(registryOptions);
                 
-                var content = await response.Content.ReadAsStringAsync();
-                var catalog = JsonConvert.DeserializeObject<RepositoryCatalog>(content);
-                
-                if (catalog?.Repositories == null)
+                // Use oras-dotnet Registry.ListRepositoriesAsync() to get repository list
+                var repositoryNames = new List<string>();
+                await foreach (var repoName in orasRegistry.ListRepositoriesAsync())
                 {
-                    return new List<Models.Repository>();
+                    repositoryNames.Add(repoName);
                 }
                 
                 var rootRepositories = new List<Models.Repository>();
                 var repoDict = new Dictionary<string, Models.Repository>();
                 
-                // Process repositories and build a tree structure
-                foreach (var repoName in catalog.Repositories)
+                // Process repositories and build a tree structure (same logic as before)
+                foreach (var repoName in repositoryNames)
                 {
                     // Split repository path by segments
                     var segments = repoName.Split('/');
@@ -527,12 +525,6 @@ namespace OrasProject.OrasDesktop.Services
         }
         
         // Helper classes for JSON deserialization
-        private class RepositoryCatalog
-        {
-            [JsonProperty("repositories")]
-            public List<string> Repositories { get; set; } = new List<string>();
-        }
-        
         private class TagList
         {
             [JsonProperty("name")]
