@@ -1,4 +1,6 @@
-# ORAS Desktop Application Knowledge Base
+# GitHub Copilot Context for ORAS Desktop Application
+
+This document provides essential context to GitHub Copilot for generating code suggestions aligned with the ORAS Desktop application architecture and patterns.
 
 ## ORAS (OCI Registry As Storage)
 
@@ -28,7 +30,7 @@ The [OrasProject.Oras](https://www.nuget.org/packages/OrasProject.Oras/0.3.0) Nu
 ### Service Layer Design
 
 ```csharp
-public interface IOrasRegistryService {
+public interface IRegistryService {
   Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct);
   Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct);
   Task<ManifestResult> GetManifestByTagAsync(string repository, string tag, CancellationToken ct);
@@ -49,6 +51,7 @@ public record CopyProgress(string Stage, long? Completed, long? Total);
 - **Error Handling**: Mapped responses (auth failures → login prompt, 404 → "Not found" message)
 - **Security**: In-memory credential storage only, no persistence in MVP
 - **Performance**: Stream large manifests, truncate display >2MB
+- **Code Cleanliness**: Removed unused `using` directives and legacy code that was replaced by the ORAS .NET SDK
 
 ## Avalonia UI Framework
 

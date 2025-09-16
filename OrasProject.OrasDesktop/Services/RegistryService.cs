@@ -2,557 +2,228 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using System.IO;
-using System.Net;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using Microsoft.Extensions.Caching.Memory;
-using OrasProject.OrasDesktop.Models;
-using OrasProject.Oras.Registry;
+using OrasProject.Oras; // for TargetExtensions.CopyAsync
+using OrasProject.Oras.Content;
 using OrasProject.Oras.Registry.Remote;
 using OrasProject.Oras.Registry.Remote.Auth;
-using OrasProject.Oras.Oci;
-using OrasProject.Oras.Content;
 
-namespace OrasProject.OrasDesktop.Services
+// Reflection no longer needed after using official CopyAsync extension.
+
+namespace OrasProject.OrasDesktop.Services;
+
+/// <summary>
+/// Concrete implementation over oras-dotnet APIs (to be filled in next step).
+/// Currently provides JSON digest extraction logic.
+/// </summary>
+public sealed class RegistryService : IRegistryService
 {
-    /// <summary>
-    /// Implementation of the registry service using ORAS .NET SDK
-    /// </summary>
-    public class RegistryService : IRegistryService
+    private RegistryConnection? _connection;
+    private Client? _client; // oras remote client
+    private HttpClient? _httpClient; // retained only for constructing Client
+    private Registry? _registry; // oras registry wrapper
+
+    private static readonly Regex DigestRegex = new(
+        "sha256:[a-f0-9]{64}",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase
+    );
+
+    public Task InitializeAsync(RegistryConnection connection, CancellationToken ct)
     {
-        private readonly HttpClient _httpClient;
-        private readonly Dictionary<string, Models.Registry> _registries;
-        private readonly Dictionary<string, string> _repositoryClients;
-        private readonly MemoryCache _memoryCache;
+        _connection = connection;
+        _httpClient = new HttpClient();
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="RegistryService"/> class
-        /// </summary>
-        public RegistryService()
+        // Build credential based on auth type.
+        var credential = new Credential();
+        switch (connection.AuthType)
         {
-            _httpClient = new HttpClient();
-            _registries = new Dictionary<string, Models.Registry>();
-            _repositoryClients = new Dictionary<string, string>();
-            _memoryCache = new MemoryCache(new MemoryCacheOptions());
+            case AuthType.Basic:
+                credential.Username = connection.Username;
+                credential.Password = connection.Password; // oras client will negotiate bearer if needed
+                break;
+            case AuthType.Bearer:
+                // Library examples use RefreshToken for token-style auth.
+                credential.RefreshToken = connection.BearerToken;
+                break;
+            case AuthType.Anonymous:
+            default:
+                break; // leave empty for anonymous
         }
 
-        /// <inheritdoc/>
-        public async Task<bool> ConnectAsync(Models.Registry registry)
+        // Only supply credential provider when we actually have credentials; oras library throws if completely empty
+        if (connection.AuthType == AuthType.Anonymous)
         {
-            try
+            _client = new Client(_httpClient);
+        }
+        else
+        {
+            var credentialProvider = new SingleRegistryCredentialProvider(
+                connection.Registry,
+                credential
+            );
+            _client = new Client(_httpClient, credentialProvider);
+        }
+        _registry = new Registry(connection.Registry, _client);
+        return Task.CompletedTask;
+    }
+
+    public async Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct)
+    {
+        EnsureInitialized();
+        var results = new List<string>();
+        await foreach (var name in _registry!.ListRepositoriesAsync(null, ct))
+        {
+            results.Add(name);
+        }
+        return results;
+    }
+
+    public async Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct)
+    {
+        EnsureInitialized();
+        var repo = await _registry!.GetRepositoryAsync(repository, ct);
+        var tags = new List<string>();
+        if (repo is not null)
+        {
+            await foreach (var t in repo.ListTagsAsync(null, ct))
             {
-                // Store the registry for later use
-                _registries[registry.Url] = registry;
-                
-                // Configure HTTP protocol based on registry settings
-                string protocol = registry.IsSecure ? "https" : "http";
-                
-                // Test the connection with a simple HTTP request
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/");
-                return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Unauthorized;
-            }
-            catch (Exception)
-            {
-                return false;
+                tags.Add(t);
             }
         }
+        return tags;
+    }
 
-        /// <inheritdoc/>
-        public async Task<bool> AuthenticateAsync(Models.Registry registry)
+    public async Task<ManifestResult> GetManifestByTagAsync(
+        string repository,
+        string tag,
+        CancellationToken ct
+    )
+    {
+        EnsureInitialized();
+        var repo = await _registry!.GetRepositoryAsync(repository, ct);
+        var (descriptor, stream) = await repo.FetchAsync(tag, ct);
+        byte[] bytes;
+        using (stream)
         {
-            try
-            {
-                if (!_registries.ContainsKey(registry.Url))
-                {
-                    if (!await ConnectAsync(registry))
-                    {
-                        return false;
-                    }
-                }
-
-                _registries[registry.Url] = registry;
-                
-                // Configure authentication headers based on the authentication type
-                if (registry.RequiresAuthentication)
-                {
-                    if (registry.AuthenticationType == Models.AuthenticationType.Basic)
-                    {
-                        var authBytes = Encoding.ASCII.GetBytes($"{registry.Username}:{registry.Password}");
-                        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                            "Basic", Convert.ToBase64String(authBytes));
-                    }
-                    else if (registry.AuthenticationType == Models.AuthenticationType.Token)
-                    {
-                        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                            "Bearer", registry.Token);
-                    }
-                }
-                else
-                {
-                    _httpClient.DefaultRequestHeaders.Authorization = null;
-                }
-                
-                // Test authentication
-                string protocol = registry.IsSecure ? "https" : "http";
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/");
-                
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            bytes = await stream.ReadAllAsync(descriptor, ct);
         }
+        var json = SafePretty(bytes);
+        var digests = ExtractDigests(json);
+        return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
+    }
 
-        /// <inheritdoc/>
-        public async Task<List<Models.Repository>> GetRepositoriesAsync(Models.Registry registry)
+    public async Task<ManifestResult> GetManifestByDigestAsync(
+        string repository,
+        string digest,
+        CancellationToken ct
+    )
+    {
+        EnsureInitialized();
+        var repo = await _registry!.GetRepositoryAsync(repository, ct);
+        var (descriptor, stream) = await repo.FetchAsync(digest, ct);
+        byte[] bytes;
+        using (stream)
         {
-            try
-            {
-                if (!_registries.ContainsKey(registry.Url))
-                {
-                    if (!await ConnectAsync(registry))
-                    {
-                        return new List<Models.Repository>();
-                    }
-                }
-
-                // Configure HTTP protocol based on registry settings
-                string protocol = registry.IsSecure ? "https" : "http";
-                
-                // Get repositories from the registry using the OCI API
-                var response = await _httpClient.GetAsync($"{protocol}://{registry.Url}/v2/_catalog");
-                if (!response.IsSuccessStatusCode)
-                {
-                    return new List<Models.Repository>();
-                }
-                
-                var content = await response.Content.ReadAsStringAsync();
-                var catalog = JsonConvert.DeserializeObject<RepositoryCatalog>(content);
-                
-                if (catalog?.Repositories == null)
-                {
-                    return new List<Models.Repository>();
-                }
-                
-                var rootRepositories = new List<Models.Repository>();
-                var repoDict = new Dictionary<string, Models.Repository>();
-                
-                // Process repositories and build a tree structure
-                foreach (var repoName in catalog.Repositories)
-                {
-                    // Split repository path by segments
-                    var segments = repoName.Split('/');
-                    string currentPath = "";
-                    Models.Repository? parent = null;
-                    
-                    // Process each segment
-                    for (int i = 0; i < segments.Length; i++)
-                    {
-                        var segment = segments[i];
-                        currentPath = string.IsNullOrEmpty(currentPath) ? segment : $"{currentPath}/{segment}";
-                        
-                        // Check if we already processed this path
-                        if (!repoDict.TryGetValue(currentPath, out var repo))
-                        {
-                            // Create a new repository
-                            repo = new Models.Repository
-                            {
-                                Name = segment,
-                                FullPath = $"{registry.Url}/{currentPath}",
-                                Parent = parent,
-                                Registry = registry,
-                                IsLeaf = (i == segments.Length - 1) // Leaf if it's the last segment
-                            };
-                            
-                            // Add to dictionary
-                            repoDict[currentPath] = repo;
-                            
-                            // Add to parent's children if parent exists
-                            if (parent != null)
-                            {
-                                parent.Children.Add(repo);
-                            }
-                            else
-                            {
-                                // Add to root repositories if no parent
-                                rootRepositories.Add(repo);
-                            }
-                        }
-                        
-                        // Set current repository as parent for next iteration
-                        parent = repo;
-                    }
-                }
-                
-                return rootRepositories;
-            }
-            catch (Exception)
-            {
-                return new List<Models.Repository>();
-            }
+            bytes = await stream.ReadAllAsync(descriptor, ct);
         }
+        var json = SafePretty(bytes);
+        var digests = ExtractDigests(json);
+        return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
+    }
 
-        /// <inheritdoc/>
-        public async Task<List<Models.Tag>> GetTagsAsync(Models.Repository repository)
+    public async Task DeleteManifestAsync(string repository, string digest, CancellationToken ct)
+    {
+        EnsureInitialized();
+        var repo = await _registry!.GetRepositoryAsync(repository, ct);
+        var desc = await repo.ResolveAsync(digest, ct);
+        await repo.DeleteAsync(desc, ct);
+    }
+
+    public async Task CopyAsync(
+        CopyRequest request,
+        IProgress<CopyProgress>? progress,
+        CancellationToken ct
+    )
+    {
+        EnsureInitialized();
+        progress?.Report(new CopyProgress("Copying", 0, null));
+        var src = await _registry!.GetRepositoryAsync(request.SourceRepository, ct);
+        var dst = await _registry.GetRepositoryAsync(request.TargetRepository, ct);
+        await src.CopyAsync(request.Reference, dst, request.TargetTag ?? string.Empty, ct);
+        progress?.Report(new CopyProgress("Completed", 1, 1));
+    }
+
+    /// <summary>
+    /// Extract digests from a manifest JSON string.
+    /// </summary>
+    internal static IReadOnlyList<string> ExtractDigests(string json)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
         {
-            try
-            {
-                if (repository.Registry == null)
-                {
-                    return new List<Models.Tag>();
-                }
-
-                if (!_registries.ContainsKey(repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(repository.Registry))
-                    {
-                        return new List<Models.Tag>();
-                    }
-                }
-
-                // Configure HTTP protocol based on registry settings
-                string protocol = repository.Registry.IsSecure ? "https" : "http";
-                
-                // Get repository name without registry URL
-                var repoPath = repository.FullPath.Replace($"{repository.Registry.Url}/", "");
-                
-                // Get tags from the repository using the OCI API
-                var response = await _httpClient.GetAsync($"{protocol}://{repository.Registry.Url}/v2/{repoPath}/tags/list");
-                if (!response.IsSuccessStatusCode)
-                {
-                    return new List<Models.Tag>();
-                }
-                
-                var content = await response.Content.ReadAsStringAsync();
-                var tagList = JsonConvert.DeserializeObject<TagList>(content);
-                
-                if (tagList?.Tags == null)
-                {
-                    return new List<Models.Tag>();
-                }
-                
-                var resultTags = new List<Models.Tag>();
-                
-                foreach (var tagName in tagList.Tags)
-                {
-                    try
-                    {
-                        // Get manifest for this tag to get the digest
-                        _httpClient.DefaultRequestHeaders.Accept.Clear();
-                        _httpClient.DefaultRequestHeaders.Accept.Add(
-                            new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
-                        
-                        var manifestResponse = await _httpClient.GetAsync(
-                            $"{protocol}://{repository.Registry.Url}/v2/{repoPath}/manifests/{tagName}");
-                        
-                        if (!manifestResponse.IsSuccessStatusCode)
-                        {
-                            continue;
-                        }
-                        
-                        var digest = manifestResponse.Headers.GetValues("Docker-Content-Digest").FirstOrDefault() ?? "";
-                        
-                        // Create tag object
-                        var tag = new Models.Tag
-                        {
-                            Name = tagName,
-                            Repository = repository,
-                            CreatedAt = DateTimeOffset.Now, // API doesn't provide creation time
-                            Digest = digest
-                        };
-                        
-                        resultTags.Add(tag);
-                    }
-                    catch
-                    {
-                        // Skip tags that can't be resolved
-                        continue;
-                    }
-                }
-                
-                return resultTags;
-            }
-            catch (Exception)
-            {
-                return new List<Models.Tag>();
-            }
+            using var doc = JsonDocument.Parse(json);
+            Traverse(doc.RootElement, set);
         }
-
-        /// <inheritdoc/>
-        public async Task<Models.Manifest> GetManifestAsync(Models.Tag tag)
+        catch
         {
-            try
-            {
-                if (tag.Repository?.Registry == null)
-                {
-                    return new Models.Manifest();
-                }
-
-                if (!_registries.ContainsKey(tag.Repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(tag.Repository.Registry))
-                    {
-                        return new Models.Manifest();
-                    }
-                }
-
-                // Configure HTTP protocol based on registry settings
-                string protocol = tag.Repository.Registry.IsSecure ? "https" : "http";
-                
-                // Get repository name without registry URL
-                var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
-                
-                // Get manifest for this tag using the OCI API
-                _httpClient.DefaultRequestHeaders.Accept.Clear();
-                _httpClient.DefaultRequestHeaders.Accept.Add(
-                    new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
-                
-                var response = await _httpClient.GetAsync(
-                    $"{protocol}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Name}");
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    return new Models.Manifest();
-                }
-                
-                var manifestJson = await response.Content.ReadAsStringAsync();
-                
-                // Parse manifest
-                var result = Models.Manifest.Parse(manifestJson);
-                result.Tag = tag;
-                result.Digest = tag.Digest;
-                
-                return result;
-            }
-            catch (Exception)
-            {
-                return new Models.Manifest();
-            }
+            // Fallback: regex only
         }
-
-        /// <inheritdoc/>
-        public async Task<string> GetContentAsync(Models.Repository repository, string digest)
+        foreach (Match m in DigestRegex.Matches(json))
         {
-            try
-            {
-                if (repository.Registry == null)
-                {
-                    return string.Empty;
-                }
-
-                if (!_registries.ContainsKey(repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(repository.Registry))
-                    {
-                        return string.Empty;
-                    }
-                }
-
-                // Configure HTTP protocol based on registry settings
-                string protocol = repository.Registry.IsSecure ? "https" : "http";
-                
-                // Get repository name without registry URL
-                var repoPath = repository.FullPath.Replace($"{repository.Registry.Url}/", "");
-                
-                // Get blob (content) for this digest using the OCI API
-                var response = await _httpClient.GetAsync(
-                    $"{protocol}://{repository.Registry.Url}/v2/{repoPath}/blobs/{digest}");
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    return string.Empty;
-                }
-                
-                return await response.Content.ReadAsStringAsync();
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
+            set.Add(m.Value);
         }
+        return set.ToList();
+    }
 
-        /// <inheritdoc/>
-        public async Task<bool> DeleteManifestAsync(Models.Tag tag)
+    private static void Traverse(JsonElement el, HashSet<string> set)
+    {
+        switch (el.ValueKind)
         {
-            try
-            {
-                if (tag.Repository?.Registry == null)
+            case JsonValueKind.Object:
+                foreach (var prop in el.EnumerateObject())
                 {
-                    return false;
-                }
-
-                if (!_registries.ContainsKey(tag.Repository.Registry.Url))
-                {
-                    if (!await ConnectAsync(tag.Repository.Registry))
+                    if (prop.NameEquals("digest") && prop.Value.ValueKind == JsonValueKind.String)
                     {
-                        return false;
+                        var v = prop.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(v) && DigestRegex.IsMatch(v))
+                            set.Add(v!);
                     }
+                    Traverse(prop.Value, set);
                 }
-
-                // Configure HTTP protocol based on registry settings
-                string protocol = tag.Repository.Registry.IsSecure ? "https" : "http";
-                
-                // Get repository name without registry URL
-                var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
-                
-                // Delete the manifest using the OCI API
-                var request = new HttpRequestMessage(
-                    HttpMethod.Delete, 
-                    $"{protocol}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Digest}");
-                
-                var response = await _httpClient.SendAsync(request);
-                
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <inheritdoc/>
-        public async Task<bool> CopyManifestAsync(Models.Tag sourceTag, Models.Repository destinationRepository, string destinationTag)
-        {
-            try
-            {
-                if (sourceTag.Repository?.Registry == null || destinationRepository.Registry == null)
-                {
-                    return false;
-                }
-
-                // Get source manifest
-                var manifest = await GetManifestAsync(sourceTag);
-                if (manifest.Content == null)
-                {
-                    return false;
-                }
-                
-                // Configure HTTP protocol based on registry settings
-                string srcProtocol = sourceTag.Repository.Registry.IsSecure ? "https" : "http";
-                string dstProtocol = destinationRepository.Registry.IsSecure ? "https" : "http";
-                
-                // Get source and destination repository names without registry URL
-                var sourceRepoPath = sourceTag.Repository.FullPath.Replace($"{sourceTag.Repository.Registry.Url}/", "");
-                var destRepoPath = destinationRepository.FullPath.Replace($"{destinationRepository.Registry.Url}/", "");
-                
-                // First, copy all the layers
-                foreach (var layer in manifest.Layers)
-                {
-                    // Get the layer content
-                    var layerResponse = await _httpClient.GetAsync(
-                        $"{srcProtocol}://{sourceTag.Repository.Registry.Url}/v2/{sourceRepoPath}/blobs/{layer.Digest}");
-                    
-                    if (!layerResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                    
-                    var layerContent = await layerResponse.Content.ReadAsByteArrayAsync();
-                    
-                    // Upload the layer to the destination
-                    var layerContentStream = new MemoryStream(layerContent);
-                    
-                    // Start upload session
-                    var uploadResponse = await _httpClient.PostAsync(
-                        $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/blobs/uploads/",
-                        null);
-                    
-                    if (!uploadResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                    
-                    // Get the upload location
-                    var location = uploadResponse.Headers.Location;
-                    if (location == null)
-                    {
-                        continue;
-                    }
-                    
-                    // Upload the content
-                    var uploadRequest = new HttpRequestMessage(HttpMethod.Put, location + $"&digest={layer.Digest}");
-                    uploadRequest.Content = new StreamContent(layerContentStream);
-                    uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(layer.MediaType);
-                    
-                    var uploadCompleteResponse = await _httpClient.SendAsync(uploadRequest);
-                    if (!uploadCompleteResponse.IsSuccessStatusCode)
-                    {
-                        continue;
-                    }
-                }
-                
-                // Upload the config
-                if (manifest.Config != null)
-                {
-                    var configResponse = await _httpClient.GetAsync(
-                        $"{srcProtocol}://{sourceTag.Repository.Registry.Url}/v2/{sourceRepoPath}/blobs/{manifest.Config.Digest}");
-                    
-                    if (configResponse.IsSuccessStatusCode)
-                    {
-                        var configContent = await configResponse.Content.ReadAsByteArrayAsync();
-                        var configContentStream = new MemoryStream(configContent);
-                        
-                        // Start upload session
-                        var uploadResponse = await _httpClient.PostAsync(
-                            $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/blobs/uploads/",
-                            null);
-                        
-                        if (uploadResponse.IsSuccessStatusCode)
-                        {
-                            // Get the upload location
-                            var location = uploadResponse.Headers.Location;
-                            if (location != null)
-                            {
-                                // Upload the content
-                                var uploadRequest = new HttpRequestMessage(HttpMethod.Put, location + $"&digest={manifest.Config.Digest}");
-                                uploadRequest.Content = new StreamContent(configContentStream);
-                                uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(manifest.Config.MediaType);
-                                
-                                await _httpClient.SendAsync(uploadRequest);
-                            }
-                        }
-                    }
-                }
-                
-                // Finally, upload the manifest with the new tag
-                var manifestContent = manifest.RawContent;
-                
-                var manifestRequest = new HttpRequestMessage(
-                    HttpMethod.Put,
-                    $"{dstProtocol}://{destinationRepository.Registry.Url}/v2/{destRepoPath}/manifests/{destinationTag}");
-                
-                manifestRequest.Content = new StringContent(manifestContent);
-                manifestRequest.Content.Headers.ContentType = new MediaTypeHeaderValue(manifest.MediaType);
-                
-                var manifestResponse = await _httpClient.SendAsync(manifestRequest);
-                
-                return manifestResponse.IsSuccessStatusCode;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-        
-        // Helper classes for JSON deserialization
-        private class RepositoryCatalog
-        {
-            [JsonProperty("repositories")]
-            public List<string> Repositories { get; set; } = new List<string>();
-        }
-        
-        private class TagList
-        {
-            [JsonProperty("name")]
-            public string Name { get; set; } = string.Empty;
-            
-            [JsonProperty("tags")]
-            public List<string> Tags { get; set; } = new List<string>();
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in el.EnumerateArray())
+                    Traverse(item, set);
+                break;
         }
     }
+
+    private void EnsureInitialized()
+    {
+        if (_connection is null || _client is null || _registry is null)
+            throw new InvalidOperationException(
+                "Service not initialized. Call InitializeAsync first."
+            );
+    }
+
+    private static string SafePretty(byte[] bytes)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(bytes);
+            return JsonSerializer.Serialize(
+                doc.RootElement,
+                new JsonSerializerOptions { WriteIndented = true }
+            );
+        }
+        catch
+        {
+            return System.Text.Encoding.UTF8.GetString(bytes);
+        }
+    }
+
+    // Raw manifest fallback removed; all operations now use oras-dotnet APIs.
 }

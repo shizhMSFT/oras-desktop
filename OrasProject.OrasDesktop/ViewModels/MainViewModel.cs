@@ -1,14 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
-using DynamicData;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
@@ -18,7 +15,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 {
     public partial class MainViewModel : ViewModelBase
     {
-        private readonly IOrasRegistryService _orasService;
+        private readonly IRegistryService _registryService;
         private readonly JsonHighlightService _jsonHighlightService;
 
         // Properties
@@ -54,7 +51,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         public MainViewModel()
         {
-            _orasService = new OrasRegistryService();
+            _registryService = new RegistryService();
             _jsonHighlightService = new JsonHighlightService();
 
             // Initialize commands
@@ -203,7 +200,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 _currentRegistry.Url = RegistryUrl;
 
                 // Initialize new oras service (anonymous for now) in parallel with legacy connect until migration completes
-                await _orasService.InitializeAsync(
+                await _registryService.InitializeAsync(
                     new RegistryConnection(
                         _currentRegistry.Url,
                         _currentRegistry.IsSecure,
@@ -221,7 +218,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 );
 
                 // Ping /v2/ manually to validate connectivity (basic anonymous check)
-                var repos = await _orasService.ListRepositoriesAsync(default);
+                var repos = await _registryService.ListRepositoriesAsync(default);
                 var connected = repos.Count >= 0; // if call returns without exception treat as connected
                 if (!connected)
                 {
@@ -280,7 +277,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 _currentRegistry.Token = result.Token;
 
                 // Reinitialize with supplied credentials
-                await _orasService.InitializeAsync(
+                await _registryService.InitializeAsync(
                     new RegistryConnection(
                         _currentRegistry.Url,
                         _currentRegistry.IsSecure,
@@ -329,7 +326,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
-                var tagNames = await _orasService.ListTagsAsync(
+                var tagNames = await _registryService.ListTagsAsync(
                     repository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty),
                     default
                 );
@@ -396,7 +393,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     $"{_currentRegistry.Url}/",
                     string.Empty
                 );
-                var manifest = await _orasService.GetManifestByTagAsync(
+                var manifest = await _registryService.GetManifestByTagAsync(
                     repoPath,
                     tag.Name,
                     default
@@ -446,7 +443,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     $"{_currentRegistry.Url}/",
                     string.Empty
                 );
-                var manifest = await _orasService.GetManifestByDigestAsync(
+                var manifest = await _registryService.GetManifestByDigestAsync(
                     repoPath,
                     digest,
                     default
@@ -568,12 +565,12 @@ namespace OrasProject.OrasDesktop.ViewModels
                     string.Empty
                 );
 
-                var manifest = await _orasService.GetManifestByTagAsync(
+                var manifest = await _registryService.GetManifestByTagAsync(
                     repoPath,
                     SelectedTag.Name,
                     default
                 );
-                await _orasService.DeleteManifestAsync(repoPath, manifest.Digest, default);
+                await _registryService.DeleteManifestAsync(repoPath, manifest.Digest, default);
 
                 // Refresh tags
                 await RefreshTagsAsync();
@@ -626,7 +623,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     StatusMessage =
                         p.Total <= 0 ? p.Stage : $"{p.Stage} {(p.Completed ?? 0)}/{p.Total}";
                 });
-                await _orasService.CopyAsync(
+                await _registryService.CopyAsync(
                     new CopyRequest(repoPath, SelectedTag.Name, repoPath, result.DestinationTag),
                     progress,
                     default
@@ -688,7 +685,7 @@ namespace OrasProject.OrasDesktop.ViewModels
     {
         private async Task<List<Repository>> BuildRepositoryTreeAsync()
         {
-            var list = await _orasService.ListRepositoriesAsync(default);
+            var list = await _registryService.ListRepositoriesAsync(default);
             var root = new List<Repository>();
             var dict = new Dictionary<string, Repository>(StringComparer.OrdinalIgnoreCase);
             foreach (var full in list)

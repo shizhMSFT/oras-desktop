@@ -4,9 +4,6 @@ using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Controls.Documents;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Controls.Primitives;
 
 namespace OrasProject.OrasDesktop.Services
 {
