@@ -1,38 +1,68 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="clr-namespace:OrasProject.OrasDesktop.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
-             x:Class="OrasProject.OrasDesktop.Views.MainView"
-             x:DataType="vm:MainViewModel">
+<UserControl
+  x:Class="OrasProject.OrasDesktop.Views.MainView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:vm="clr-namespace:OrasProject.OrasDesktop.ViewModels"
+  d:DesignHeight="600"
+  d:DesignWidth="1000"
+  x:DataType="vm:MainViewModel"
+  mc:Ignorable="d">
   <Design.DataContext>
-    <!-- This only sets the DataContext for the previewer in an IDE,
-         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+    <!--
+      This only sets the DataContext for the previewer in an IDE,
+      to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs)
+    -->
     <vm:MainViewModel />
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*,Auto">
-    <!-- Header with connection panel -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="10">
-      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5">
-        <TextBlock Text="Registry URL:" VerticalAlignment="Center" />
-        <TextBox Text="{Binding RegistryUrl}" Width="250" Watermark="Enter registry URL (e.g., mcr.microsoft.com)" />
-        <Button Content="Connect" Command="{Binding ConnectCommand}" />
+    <!--  Header with connection panel  -->
+    <Grid
+      Grid.Row="0"
+      Margin="10"
+      ColumnDefinitions="Auto,*,Auto">
+      <StackPanel
+        Grid.Column="0"
+        Orientation="Horizontal"
+        Spacing="5">
+        <TextBlock VerticalAlignment="Center" Text="Registry URL:" />
+        <TextBox
+          Width="250"
+          Text="{Binding RegistryUrl}"
+          Watermark="Enter registry URL (e.g., mcr.microsoft.com)" />
+        <Button Command="{Binding ConnectCommand}" Content="Connect" />
       </StackPanel>
-      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
-        <TextBlock Text="Authentication:" VerticalAlignment="Center" />
-        <ComboBox SelectedItem="{Binding SelectedAuthType}" ItemsSource="{Binding AuthTypes}" Width="120" />
-        <Button Content="Login" Command="{Binding LoginCommand}" />
+      <StackPanel
+        Grid.Column="2"
+        Orientation="Horizontal"
+        Spacing="5">
+        <TextBlock VerticalAlignment="Center" Text="Authentication:" />
+        <ComboBox
+          Width="120"
+          ItemsSource="{Binding AuthTypes}"
+          SelectedItem="{Binding SelectedAuthType}" />
+        <Button Command="{Binding LoginCommand}" Content="Login" />
       </StackPanel>
     </Grid>
 
-    <!-- Main content panel -->
+    <!--  Main content panel  -->
     <Grid Grid.Row="1" ColumnDefinitions="250,250,*">
-      <!-- Repository tree view panel -->
-      <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="10,0,5,10">
-        <TextBlock Grid.Row="0" Text="Repositories" FontWeight="Bold" Margin="0,0,0,5" />
-        <TreeView Grid.Row="1" ItemsSource="{Binding Repositories}" SelectedItem="{Binding SelectedRepository}">
+      <!--  Repository tree view panel  -->
+      <Grid
+        Grid.Column="0"
+        Margin="10,0,5,10"
+        RowDefinitions="Auto,*">
+        <TextBlock
+          Grid.Row="0"
+          Margin="0,0,0,5"
+          FontWeight="Bold"
+          Text="Repositories" />
+        <TreeView
+          Grid.Row="1"
+          ItemsSource="{Binding Repositories}"
+          SelectedItem="{Binding SelectedRepository}">
           <TreeView.ItemTemplate>
             <TreeDataTemplate ItemsSource="{Binding Children}">
               <TextBlock Text="{Binding Name}" />
@@ -41,45 +71,109 @@
         </TreeView>
       </Grid>
 
-      <!-- Tags panel -->
-      <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" Margin="5,0,5,10">
-        <TextBlock Grid.Row="0" Text="Tags" FontWeight="Bold" Margin="0,0,0,5" />
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
-          <Button Content="Refresh" Command="{Binding RefreshTagsCommand}" />
+      <!--  Tags panel  -->
+      <Grid
+        Grid.Column="1"
+        Margin="5,0,5,10"
+        RowDefinitions="Auto,Auto,*">
+        <TextBlock
+          Grid.Row="0"
+          Margin="0,0,0,5"
+          FontWeight="Bold"
+          Text="Tags" />
+        <StackPanel
+          Grid.Row="1"
+          Margin="0,0,0,5"
+          Orientation="Horizontal"
+          Spacing="5">
+          <Button Command="{Binding RefreshTagsCommand}" Content="Refresh" />
         </StackPanel>
-        <ListBox Grid.Row="2" ItemsSource="{Binding Tags}" SelectedItem="{Binding SelectedTag}">
+        <ListBox
+          Grid.Row="2"
+          ItemsSource="{Binding Tags}"
+          SelectedItem="{Binding SelectedTag}">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <TextBlock Text="{Binding Name}" />
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="{Binding Name}" />
+                <TextBlock
+                  FontFamily="Consolas"
+                  FontSize="10"
+                  Foreground="Gray"
+                  IsVisible="{Binding Digest}">
+                  <TextBlock.Text>
+                    <Binding Path="Digest" />
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
       </Grid>
 
-      <!-- Manifest content panel -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*" Margin="5,0,10,10">
-        <TextBlock Grid.Row="0" Text="Manifest Content" FontWeight="Bold" Margin="0,0,0,5" />
-        
-        <!-- Reference string with copy button -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" IsVisible="{Binding !!SelectedTag}" Margin="0,0,0,5">
-          <TextBox Grid.Column="0" Text="{Binding SelectedTagReference}" FontFamily="Consolas" IsReadOnly="True" 
-                  VerticalAlignment="Center" BorderThickness="0" Background="Transparent" Padding="0" />
-          <Button Grid.Column="1" Command="{Binding CopyReferenceCommand}" ToolTip.Tip="Copy reference to clipboard" Width="24" Height="24" Padding="0" Margin="5,0,0,0">
+      <!--  Manifest content panel  -->
+      <Grid
+        Grid.Column="2"
+        Margin="5,0,10,10"
+        RowDefinitions="Auto,Auto,Auto,*">
+        <TextBlock
+          Grid.Row="0"
+          Margin="0,0,0,5"
+          FontWeight="Bold"
+          Text="Manifest Content" />
+
+        <!--  Reference string with copy button  -->
+        <Grid
+          Grid.Row="1"
+          Margin="0,0,0,5"
+          ColumnDefinitions="*,Auto"
+          IsVisible="{Binding !!SelectedTag}">
+          <TextBox
+            Grid.Column="0"
+            Padding="0"
+            VerticalAlignment="Center"
+            Background="Transparent"
+            BorderThickness="0"
+            FontFamily="Consolas"
+            IsReadOnly="True"
+            Text="{Binding SelectedTagReference}" />
+          <Button
+            Grid.Column="1"
+            Width="24"
+            Height="24"
+            Margin="5,0,0,0"
+            Padding="0"
+            Command="{Binding CopyReferenceCommand}"
+            ToolTip.Tip="Copy reference to clipboard">
             <Panel>
-              <Path Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" 
-                    Fill="{Binding $parent.Foreground}" 
-                    Stretch="Uniform" 
-                    Width="16" 
-                    Height="16" />
+              <Path
+                Width="16"
+                Height="16"
+                Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"
+                Fill="{Binding $parent.Foreground}"
+                Stretch="Uniform" />
             </Panel>
           </Button>
         </Grid>
-        
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
-          <Button Content="Delete" Command="{Binding DeleteManifestCommand}" />
-          <Button Content="Copy" Command="{Binding CopyManifestCommand}" />
+
+        <StackPanel
+          Grid.Row="2"
+          Margin="0,0,0,5"
+          Orientation="Horizontal"
+          Spacing="5">
+          <Button
+            Command="{Binding DeleteManifestCommand}"
+            Content="Delete"
+            IsEnabled="{Binding CanModifySelectedTag}" />
+          <Button
+            Command="{Binding CopyManifestCommand}"
+            Content="Copy"
+            IsEnabled="{Binding CanModifySelectedTag}" />
         </StackPanel>
-        <Border Grid.Row="3" BorderBrush="LightGray" BorderThickness="1">
+        <Border
+          Grid.Row="3"
+          BorderBrush="LightGray"
+          BorderThickness="1">
           <ScrollViewer>
             <ContentControl Content="{Binding ManifestViewer}" />
           </ScrollViewer>
@@ -87,10 +181,23 @@
       </Grid>
     </Grid>
 
-    <!-- Status bar -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Background="#f0f0f0" Height="30">
-      <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Margin="10,0,0,0" VerticalAlignment="Center" />
-      <ProgressBar Grid.Column="1" Width="100" Height="15" Margin="0,0,10,0" IsIndeterminate="{Binding IsBusy}" />
+    <!--  Status bar  -->
+    <Grid
+      Grid.Row="2"
+      Height="30"
+      Background="#f0f0f0"
+      ColumnDefinitions="*,Auto">
+      <TextBlock
+        Grid.Column="0"
+        Margin="10,0,0,0"
+        VerticalAlignment="Center"
+        Text="{Binding StatusMessage}" />
+      <ProgressBar
+        Grid.Column="1"
+        Width="100"
+        Height="15"
+        Margin="0,0,10,0"
+        IsIndeterminate="{Binding IsBusy}" />
     </Grid>
   </Grid>
 </UserControl>
