@@ -310,19 +310,31 @@ namespace OrasProject.OrasDesktop.Services
                     }
                 }
 
-                // Configure HTTP protocol based on registry settings
-                string protocol = tag.Repository.Registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Client for manifest request
+                ICredentialProvider? credentialProvider = null;
+                if (tag.Repository.Registry.RequiresAuthentication)
+                {
+                    var credential = new Credential
+                    {
+                        Username = tag.Repository.Registry.Username ?? string.Empty,
+                        Password = tag.Repository.Registry.Password ?? string.Empty,
+                        AccessToken = tag.Repository.Registry.Token ?? string.Empty
+                    };
+                    credentialProvider = new SingleRegistryCredentialProvider(tag.Repository.Registry.Url, credential);
+                }
+                
+                var client = new Client(_httpClient, credentialProvider);
                 
                 // Get repository name without registry URL
                 var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
                 
                 // Get manifest for this tag using the OCI API
-                _httpClient.DefaultRequestHeaders.Accept.Clear();
-                _httpClient.DefaultRequestHeaders.Accept.Add(
-                    new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
+                var manifestUri = new Uri($"{(tag.Repository.Registry.IsSecure ? "https" : "http")}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Name}");
+                var request = new HttpRequestMessage(HttpMethod.Get, manifestUri);
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
                 
-                var response = await _httpClient.GetAsync(
-                    $"{protocol}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Name}");
+                var response = await client.SendAsync(request, default);
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -362,15 +374,29 @@ namespace OrasProject.OrasDesktop.Services
                     }
                 }
 
-                // Configure HTTP protocol based on registry settings
-                string protocol = repository.Registry.IsSecure ? "https" : "http";
+                // Use oras-dotnet Client for blob request
+                ICredentialProvider? credentialProvider = null;
+                if (repository.Registry.RequiresAuthentication)
+                {
+                    var credential = new Credential
+                    {
+                        Username = repository.Registry.Username ?? string.Empty,
+                        Password = repository.Registry.Password ?? string.Empty,
+                        AccessToken = repository.Registry.Token ?? string.Empty
+                    };
+                    credentialProvider = new SingleRegistryCredentialProvider(repository.Registry.Url, credential);
+                }
+                
+                var client = new Client(_httpClient, credentialProvider);
                 
                 // Get repository name without registry URL
                 var repoPath = repository.FullPath.Replace($"{repository.Registry.Url}/", "");
                 
                 // Get blob (content) for this digest using the OCI API
-                var response = await _httpClient.GetAsync(
-                    $"{protocol}://{repository.Registry.Url}/v2/{repoPath}/blobs/{digest}");
+                var blobUri = new Uri($"{(repository.Registry.IsSecure ? "https" : "http")}://{repository.Registry.Url}/v2/{repoPath}/blobs/{digest}");
+                var request = new HttpRequestMessage(HttpMethod.Get, blobUri);
+                
+                var response = await client.SendAsync(request, default);
                 
                 if (!response.IsSuccessStatusCode)
                 {
