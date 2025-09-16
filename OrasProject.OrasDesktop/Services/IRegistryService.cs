@@ -1,72 +1,72 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
-using OrasProject.OrasDesktop.Models;
 
-namespace OrasProject.OrasDesktop.Services
+namespace OrasProject.OrasDesktop.Services;
+
+/// <summary>
+/// High level abstraction over oras-dotnet for registry operations consumed by ViewModels.
+/// </summary>
+public interface IRegistryService
 {
-    /// <summary>
-    /// Interface for registry operations
-    /// </summary>
-    public interface IRegistryService
-    {
-        /// <summary>
-        /// Connect to a registry with the provided URL
-        /// </summary>
-        /// <param name="registry">The registry to connect to</param>
-        /// <returns>True if connection is successful, false otherwise</returns>
-        Task<bool> ConnectAsync(Registry registry);
-
-        /// <summary>
-        /// Authenticate with the registry
-        /// </summary>
-        /// <param name="registry">The registry to authenticate with</param>
-        /// <returns>True if authentication is successful, false otherwise</returns>
-        Task<bool> AuthenticateAsync(Registry registry);
-
-        /// <summary>
-        /// Get repositories from the registry
-        /// </summary>
-        /// <param name="registry">The registry to get repositories from</param>
-        /// <returns>A list of repositories</returns>
-        Task<List<Repository>> GetRepositoriesAsync(Registry registry);
-
-        /// <summary>
-        /// Get tags from a repository
-        /// </summary>
-        /// <param name="repository">The repository to get tags from</param>
-        /// <returns>A list of tags</returns>
-        Task<List<Tag>> GetTagsAsync(Repository repository);
-
-        /// <summary>
-        /// Get manifest for a tag
-        /// </summary>
-        /// <param name="tag">The tag to get manifest for</param>
-        /// <returns>The manifest</returns>
-        Task<Manifest> GetManifestAsync(Tag tag);
-
-        /// <summary>
-        /// Get content for a digest reference
-        /// </summary>
-        /// <param name="repository">The repository containing the reference</param>
-        /// <param name="digest">The digest of the reference</param>
-        /// <returns>The content as a string</returns>
-        Task<string> GetContentAsync(Repository repository, string digest);
-
-        /// <summary>
-        /// Delete a manifest
-        /// </summary>
-        /// <param name="tag">The tag whose manifest to delete</param>
-        /// <returns>True if deletion is successful, false otherwise</returns>
-        Task<bool> DeleteManifestAsync(Tag tag);
-
-        /// <summary>
-        /// Copy a manifest and its references to another repository
-        /// </summary>
-        /// <param name="sourceTag">The source tag</param>
-        /// <param name="destinationRepository">The destination repository</param>
-        /// <param name="destinationTag">The destination tag</param>
-        /// <returns>True if copy is successful, false otherwise</returns>
-        Task<bool> CopyManifestAsync(Tag sourceTag, Repository destinationRepository, string destinationTag);
-    }
+    Task InitializeAsync(RegistryConnection connection, CancellationToken ct);
+    Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct);
+    Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct);
+    Task<ManifestResult> GetManifestByTagAsync(string repository, string tag, CancellationToken ct);
+    Task<ManifestResult> GetManifestByDigestAsync(
+        string repository,
+        string digest,
+        CancellationToken ct
+    );
+    Task DeleteManifestAsync(string repository, string digest, CancellationToken ct);
+    Task CopyAsync(CopyRequest request, IProgress<CopyProgress>? progress, CancellationToken ct);
 }
+
+/// <param name="Registry">Registry hostname (e.g., ghcr.io)</param>
+/// <param name="IsSecure">Whether to use HTTPS</param>
+/// <param name="Username">Optional username</param>
+/// <param name="Password">Optional password / token (basic or bearer token depending on server)</param>
+/// <summary>
+/// Connection parameters for a registry, supporting anonymous, basic, or bearer auth.
+/// </summary>
+/// <param name="Registry">Registry hostname (e.g., ghcr.io)</param>
+/// <param name="IsSecure">Use HTTPS when true, HTTP otherwise</param>
+/// <param name="AuthType">Authentication mode</param>
+/// <param name="Username">Username for basic auth</param>
+/// <param name="Password">Password for basic auth</param>
+/// <param name="BearerToken">Token for bearer auth</param>
+public record RegistryConnection(
+    string Registry,
+    bool IsSecure = true,
+    AuthType AuthType = AuthType.Anonymous,
+    string? Username = null,
+    string? Password = null,
+    string? BearerToken = null
+);
+
+/// <summary>
+/// Supported authentication types.
+/// </summary>
+public enum AuthType
+{
+    Anonymous,
+    Basic,
+    Bearer,
+}
+
+public record ManifestResult(
+    string Digest,
+    string MediaType,
+    string Json,
+    IReadOnlyList<string> ReferencedDigests
+);
+
+public record CopyRequest(
+    string SourceRepository,
+    string Reference,
+    string TargetRepository,
+    string? TargetTag
+);
+
+public record CopyProgress(string Stage, long? Completed, long? Total);
