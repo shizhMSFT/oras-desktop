@@ -268,8 +268,9 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[tag.Repository.Registry.Url] = tag.Repository.Registry;
 
-                // Use oras-dotnet Client for manifest request
-                ICredentialProvider? credentialProvider = null;
+                // Use oras-dotnet Repository for getting manifest
+                IClient client;
+                
                 if (tag.Repository.Registry.RequiresAuthentication)
                 {
                     var credential = new Credential
@@ -278,35 +279,43 @@ namespace OrasProject.OrasDesktop.Services
                         Password = tag.Repository.Registry.Password ?? string.Empty,
                         AccessToken = tag.Repository.Registry.Token ?? string.Empty
                     };
-                    credentialProvider = new SingleRegistryCredentialProvider(tag.Repository.Registry.Url, credential);
+                    var credentialProvider = new SingleRegistryCredentialProvider(tag.Repository.Registry.Url, credential);
+                    client = new Client(_httpClient, credentialProvider);
                 }
-                
-                var client = new Client(_httpClient, credentialProvider);
-                
+                else
+                {
+                    client = new Client(_httpClient);
+                }
+
                 // Get repository name without registry URL
                 var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
+                var repoReference = $"{tag.Repository.Registry.Url}/{repoPath}";
                 
-                // Get manifest for this tag using the OCI API
-                var manifestUri = new Uri($"{(tag.Repository.Registry.IsSecure ? "https" : "http")}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Name}");
-                var request = new HttpRequestMessage(HttpMethod.Get, manifestUri);
-                request.Headers.Accept.Clear();
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
-                
-                var response = await client.SendAsync(request, default);
-                
-                if (!response.IsSuccessStatusCode)
+                // Create oras-dotnet Repository
+                var repositoryOptions = new RepositoryOptions
                 {
-                    return new Models.Manifest();
+                    Reference = Reference.Parse(repoReference),
+                    Client = client,
+                    PlainHttp = !tag.Repository.Registry.IsSecure
+                };
+                var orasRepo = new OrasProject.Oras.Registry.Remote.Repository(repositoryOptions);
+                
+                // Use oras-dotnet Repository.FetchAsync() to get manifest directly
+                var (descriptor, manifestStream) = await orasRepo.FetchAsync(tag.Name);
+                
+                using (manifestStream)
+                {
+                    using var memoryStream = new MemoryStream();
+                    await manifestStream.CopyToAsync(memoryStream);
+                    var manifestJson = Encoding.UTF8.GetString(memoryStream.ToArray());
+                    
+                    // Parse manifest
+                    var result = Models.Manifest.Parse(manifestJson);
+                    result.Tag = tag;
+                    result.Digest = descriptor.Digest; // Use the actual digest from the descriptor
+                    
+                    return result;
                 }
-                
-                var manifestJson = await response.Content.ReadAsStringAsync();
-                
-                // Parse manifest
-                var result = Models.Manifest.Parse(manifestJson);
-                result.Tag = tag;
-                result.Digest = tag.Digest;
-                
-                return result;
             }
             catch (Exception)
             {
