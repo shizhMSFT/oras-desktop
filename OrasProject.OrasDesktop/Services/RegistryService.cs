@@ -398,7 +398,7 @@ namespace OrasProject.OrasDesktop.Services
                 // Store registry info
                 _registries[tag.Repository.Registry.Url] = tag.Repository.Registry;
 
-                // Use oras-dotnet Client for delete request
+                // Use oras-dotnet Repository and ManifestStore for manifest deletion
                 ICredentialProvider? credentialProvider = null;
                 if (tag.Repository.Registry.RequiresAuthentication)
                 {
@@ -413,16 +413,28 @@ namespace OrasProject.OrasDesktop.Services
                 
                 var client = new Client(_httpClient, credentialProvider);
                 
-                // Get repository name without registry URL
+                // Create oras-dotnet Repository instance
                 var repoPath = tag.Repository.FullPath.Replace($"{tag.Repository.Registry.Url}/", "");
+                var reference = Reference.Parse($"{tag.Repository.Registry.Url}/{repoPath}");
+                var options = new RepositoryOptions
+                {
+                    Reference = reference,
+                    Client = client,
+                    PlainHttp = !tag.Repository.Registry.IsSecure
+                };
+                var orasRepo = new OrasProject.Oras.Registry.Remote.Repository(options);
                 
-                // Delete the manifest using the OCI API
-                var deleteUri = new Uri($"{(tag.Repository.Registry.IsSecure ? "https" : "http")}://{tag.Repository.Registry.Url}/v2/{repoPath}/manifests/{tag.Digest}");
-                var request = new HttpRequestMessage(HttpMethod.Delete, deleteUri);
+                // Use ManifestStore.DeleteAsync() with tag's digest as descriptor
+                var manifestStore = new ManifestStore(orasRepo);
+                var descriptor = new Descriptor
+                {
+                    MediaType = MediaType.ImageManifest, // Default to ImageManifest for tags
+                    Digest = tag.Digest,
+                    Size = tag.Size
+                };
                 
-                var response = await client.SendAsync(request, default);
-                
-                return response.IsSuccessStatusCode;
+                await manifestStore.DeleteAsync(descriptor);
+                return true;
             }
             catch (Exception)
             {
