@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace OrasProject.OrasDesktop.Models
@@ -5,7 +6,7 @@ namespace OrasProject.OrasDesktop.Models
     /// <summary>
     /// Represents a repository in an OCI registry
     /// </summary>
-    public class Repository
+    public class Repository : IComparable<Repository>
     {
         /// <summary>
         /// Gets or sets the name of the repository
@@ -41,5 +42,24 @@ namespace OrasProject.OrasDesktop.Models
         /// Gets or sets the registry this repository belongs to
         /// </summary>
         public Registry? Registry { get; set; }
+
+        /// <summary>
+        /// Compares this repository with another repository for ordering.
+        /// </summary>
+        /// <param name="other">The repository to compare with this repository.</param>
+        /// <returns>
+        /// A value indicating the relative order of the repositories being compared.
+        /// The return value has these meanings:
+        /// Less than zero: This repository precedes other in the sort order.
+        /// Zero: This repository occurs in the same position in the sort order as other.
+        /// Greater than zero: This repository follows other in the sort order.
+        /// </returns>
+        public int CompareTo(Repository? other)
+        {
+            if (other == null)
+                return 1;
+                
+            return string.Compare(Name, other.Name, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }
