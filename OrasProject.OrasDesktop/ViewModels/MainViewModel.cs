@@ -226,14 +226,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     return;
                 }
 
-                // Get repositories
+                // Get repositories (already sorted at all levels)
                 var repositories = await BuildRepositoryTreeAsync();
 
-                // Sort repositories by name
-                var sortedRepositories = repositories.OrderBy(r => r.Name).ToList();
-
                 Repositories.Clear();
-                foreach (var repo in sortedRepositories)
+                foreach (var repo in repositories)
                 {
                     Repositories.Add(repo);
                 }
@@ -343,18 +340,18 @@ namespace OrasProject.OrasDesktop.ViewModels
                     );
                 }
 
-                // Sort tags by name
-                var sortedTags = tags.OrderBy(t => t.Name).ToList();
+                // Sort tags by name using IComparable implementation
+                tags.Sort();
 
                 Tags.Clear();
-                foreach (var tag in sortedTags)
+                foreach (var tag in tags)
                 {
                     Tags.Add(tag);
                 }
 
                 // Digest resolution removed for performance; resolved only when required for delete.
 
-                StatusMessage = $"Loaded {sortedTags.Count} tags for {repository.Name}";
+                StatusMessage = $"Loaded {tags.Count} tags for {repository.Name}";
             }
             catch (Exception ex)
             {
@@ -715,7 +712,25 @@ namespace OrasProject.OrasDesktop.ViewModels
                     parent = repo;
                 }
             }
-            return root.OrderBy(r => r.Name).ToList();
+            
+            // Sort all repositories recursively
+            SortRepositoriesRecursively(root);
+            return root;
+        }
+        
+        private void SortRepositoriesRecursively(List<Repository> repositories)
+        {
+            // Sort the current level using IComparable implementation
+            repositories.Sort();
+            
+            // Recursively sort all children
+            foreach (var repo in repositories)
+            {
+                if (repo.Children.Count > 0)
+                {
+                    SortRepositoriesRecursively(repo.Children);
+                }
+            }
         }
     }
 }
