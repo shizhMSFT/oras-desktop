@@ -37,7 +37,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore OrasProject.OrasDesktop.sln
+        run: dotnet restore OrasProject.OrasDesktop.sln -p:PublishReadyToRun=true
 
       - name: Build
         run: dotnet build OrasProject.OrasDesktop.sln --configuration Release --no-restore
@@ -52,6 +52,7 @@ jobs:
           elif [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             RID="osx-arm64"
           fi
+          # Enable PublishReadyToRun for all platforms since we're restoring with this property
           dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r $RID -o ./publish
         shell: bash
 
@@ -105,6 +106,10 @@ jobs:
           
           # Move all remaining files to the MacOS directory
           find ./publish -type f -not -path "*/OrasProject.OrasDesktop.Desktop" -exec cp {} "./OrasDesktop.app/Contents/MacOS/" \;
+          
+          # Ad-hoc code sign the app bundle
+          /usr/bin/codesign --force --options runtime --sign "-" "./OrasDesktop.app" --deep
+          /usr/bin/codesign --verify --verbose "./OrasDesktop.app"
           
           # Create a zip archive containing the .app bundle
           ditto -c -k --keepParent "./OrasDesktop.app" "./oras-desktop_${{ steps.extract_version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.app.zip"
