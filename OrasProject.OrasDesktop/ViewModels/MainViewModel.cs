@@ -22,6 +22,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _registryUrl = "mcr.microsoft.com";
         private ObservableCollection<Repository> _repositories =
             new ObservableCollection<Repository>();
+        private ObservableCollection<Repository> _filteredRepositories = new();
         private Repository? _selectedRepository;
         private ObservableCollection<Tag> _tags = new ObservableCollection<Tag>();
         private Tag? _selectedTag;
@@ -44,6 +45,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private bool _referrersLoading;
         private double _progressValue;
         private bool _isProgressIndeterminate;
+        private string _repositoryFilterText = string.Empty;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -106,6 +108,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _repositories;
             set => this.RaiseAndSetIfChanged(ref _repositories, value);
+        }
+
+        public ObservableCollection<Repository> FilteredRepositories
+        {
+            get => _filteredRepositories;
+            set => this.RaiseAndSetIfChanged(ref _filteredRepositories, value);
         }
 
         public Repository? SelectedRepository
@@ -206,6 +214,19 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isProgressIndeterminate, value);
         }
 
+        public string RepositoryFilterText
+        {
+            get => _repositoryFilterText;
+            set
+            {
+                if (!string.Equals(_repositoryFilterText, value, StringComparison.Ordinal))
+                {
+                    this.RaiseAndSetIfChanged(ref _repositoryFilterText, value);
+                    ApplyRepositoryFilter();
+                }
+            }
+        }
+
         public ObservableCollection<string> AuthTypes
         {
             get => _authTypes;
@@ -279,6 +300,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     Repositories.Add(repo);
                 }
+
+                ApplyRepositoryFilter();
 
                 StatusMessage = "Connected to registry";
             }
@@ -846,6 +869,61 @@ namespace OrasProject.OrasDesktop.ViewModels
                     SortRepositoriesRecursively(repo.Children);
                 }
             }
+        }
+
+        private void ApplyRepositoryFilter()
+        {
+            var filter = RepositoryFilterText;
+            FilteredRepositories.Clear();
+
+            // No filter -> shallow copy of original top-level collection
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                foreach (var r in Repositories)
+                    FilteredRepositories.Add(r);
+                return;
+            }
+
+            var trimmed = filter.Trim();
+            foreach (var root in Repositories)
+            {
+                var pruned = PruneRepository(root, trimmed);
+                if (pruned != null)
+                    FilteredRepositories.Add(pruned);
+            }
+        }
+
+        private Repository? PruneRepository(Repository source, string filter)
+        {
+            bool selfMatch = source.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            var prunedChildren = new List<Repository>();
+            foreach (var child in source.Children)
+            {
+                var prunedChild = PruneRepository(child, filter);
+                if (prunedChild != null)
+                {
+                    prunedChild.Parent = null; // will set below after attaching
+                    prunedChildren.Add(prunedChild);
+                }
+            }
+
+            if (!selfMatch && prunedChildren.Count == 0)
+                return null; // neither this node nor descendants match
+
+            // create clone (prunedChildren already filtered)
+            var clone = new Repository
+            {
+                Name = source.Name,
+                FullPath = source.FullPath,
+                Registry = source.Registry,
+                IsLeaf = source.IsLeaf,
+            };
+            foreach (var c in prunedChildren)
+            {
+                c.Parent = clone;
+                clone.Children.Add(c);
+            }
+            return clone;
         }
     }
 }
