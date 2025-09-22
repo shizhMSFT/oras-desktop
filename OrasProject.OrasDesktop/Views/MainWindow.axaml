@@ -6,7 +6,7 @@
         xmlns:views="clr-namespace:OrasProject.OrasDesktop.Views"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
         x:Class="OrasProject.OrasDesktop.Views.MainWindow"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/oras-logo.ico"
         Title="ORAS Desktop Client"
         WindowStartupLocation="CenterScreen"
         MinWidth="800" MinHeight="500">
