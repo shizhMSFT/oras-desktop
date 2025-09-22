@@ -50,6 +50,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
+        public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
 
         public MainViewModel()
         {
@@ -58,6 +59,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
+            ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyManifestCommand = ReactiveCommand.CreateFromTask(CopyManifestAsync);
@@ -158,13 +160,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                     {
                         IsProgressIndeterminate = true;
                     }
-                    else if (!value)
-                    {
-                        // If we're no longer busy, hide the progress indicator
-                        // unless referrers are still loading
-                        IsProgressIndeterminate = ReferrersLoading;
-                    }
                 }
+                // Note: We don't reset IsProgressIndeterminate here when IsBusy becomes false
+                // as that's now handled explicitly in the operation completion code
             }
         }
 
@@ -189,7 +187,24 @@ namespace OrasProject.OrasDesktop.ViewModels
         public bool ReferrersLoading
         {
             get => _referrersLoading;
-            set => this.RaiseAndSetIfChanged(ref _referrersLoading, value);
+            set 
+            { 
+                if (this.RaiseAndSetIfChanged(ref _referrersLoading, value))
+                {
+                    // When referrer loading starts, set determinate progress mode
+                    if (value)
+                    {
+                        IsProgressIndeterminate = false;
+                        ProgressValue = 0;
+                    }
+                    // When referrer loading ends, reset progress if not busy with something else
+                    else if (!IsBusy)
+                    {
+                        IsProgressIndeterminate = false;
+                        ProgressValue = 0;
+                    }
+                }
+            }
         }
 
         public double ProgressValue
@@ -254,6 +269,11 @@ namespace OrasProject.OrasDesktop.ViewModels
         // Command implementations
         private async Task ConnectToRegistryAsync()
         {
+            await ConnectToRegistryAsync(false);
+        }
+        
+        private async Task ConnectToRegistryAsync(bool forceLogin)
+        {
             IsBusy = true;
             StatusMessage = "Connecting to registry...";
 
@@ -276,6 +296,60 @@ namespace OrasProject.OrasDesktop.ViewModels
                     default
                 );
 
+                var mainWindow = GetMainWindow();
+                if (mainWindow == null)
+                {
+                    StatusMessage = "Failed to get main window";
+                    return;
+                }
+
+                // If Shift is pressed (force login), skip anonymous connection attempt
+                if (forceLogin)
+                {
+                    var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
+                    if (!result.Result)
+                    {
+                        StatusMessage = "Authentication cancelled";
+                        return;
+                    }
+                    
+                    // Update registry with authentication information
+                    _currentRegistry.AuthenticationType = result.AuthType;
+                    _currentRegistry.Username = result.Username;
+                    _currentRegistry.Password = result.Password;
+                    _currentRegistry.Token = result.Token;
+
+                    // Reinitialize with supplied credentials
+                    await _registryService.InitializeAsync(
+                        new RegistryConnection(
+                            _currentRegistry.Url,
+                            _currentRegistry.IsSecure,
+                            _currentRegistry.AuthenticationType switch
+                            {
+                                AuthenticationType.Basic => AuthType.Basic,
+                                AuthenticationType.Token => AuthType.Bearer,
+                                _ => AuthType.Anonymous,
+                            },
+                            _currentRegistry.Username,
+                            _currentRegistry.Password,
+                            _currentRegistry.Token
+                        ),
+                        default
+                    );
+
+                    // Get repositories with authentication
+                    var repos = await _registryService.ListRepositoriesAsync(default);
+                    var repositories = await BuildRepositoryTreeAsync();
+                    Repositories.Clear();
+                    foreach (var repo in repositories)
+                    {
+                        Repositories.Add(repo);
+                    }
+                    ApplyRepositoryFilter();
+                    StatusMessage = "Connected to registry (authenticated)";
+                    return;
+                }
+                
                 try
                 {
                     // Try to connect anonymously first
@@ -298,13 +372,6 @@ namespace OrasProject.OrasDesktop.ViewModels
                 catch (Exception)
                 {
                     // Anonymous connection failed, prompt for authentication
-                    var mainWindow = GetMainWindow();
-                    if (mainWindow == null)
-                    {
-                        StatusMessage = "Failed to get main window";
-                        return;
-                    }
-
                     var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
                     if (!result.Result)
                     {
@@ -355,6 +422,9 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Explicitly reset progress state after connection is complete
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
             }
         }
 
@@ -409,6 +479,9 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Reset progress indicators
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
             }
         }
 
@@ -478,6 +551,12 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Reset progress indicators for manifest loading
+                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                {
+                    IsProgressIndeterminate = false;
+                    ProgressValue = 0;
+                }
             }
         }
 
@@ -529,6 +608,12 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Reset progress indicators for digest content loading
+                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                {
+                    IsProgressIndeterminate = false;
+                    ProgressValue = 0;
+                }
             }
         }
 
@@ -745,6 +830,9 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Reset progress indicators
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
             }
         }
 
@@ -803,6 +891,9 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+                // Reset progress indicators
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
             }
         }
 
