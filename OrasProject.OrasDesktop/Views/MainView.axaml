@@ -18,7 +18,7 @@
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
     <!--  Header with connection panel  -->
     <Grid
       Grid.Row="0"
@@ -104,40 +104,6 @@
           Margin="0,0,0,5"
           FontWeight="Bold"
           Text="Manifest Content" />
-
-        <!--  Reference string with copy button  -->
-        <Grid
-          Grid.Row="1"
-          Margin="0,0,0,5"
-          ColumnDefinitions="*,Auto"
-          IsVisible="{Binding !!SelectedTag}">
-          <TextBox
-            Grid.Column="0"
-            Padding="0"
-            VerticalAlignment="Center"
-            Background="Transparent"
-            BorderThickness="0"
-            FontFamily="Consolas"
-            IsReadOnly="True"
-            Text="{Binding SelectedTagReference}" />
-          <Button
-            Grid.Column="1"
-            Width="24"
-            Height="24"
-            Margin="5,0,0,0"
-            Padding="0"
-            Command="{Binding CopyReferenceCommand}"
-            ToolTip.Tip="Copy reference to clipboard">
-            <Panel>
-              <Path
-                Width="16"
-                Height="16"
-                Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"
-                Fill="{DynamicResource ButtonForeground}"
-                Stretch="Uniform" />
-            </Panel>
-          </Button>
-        </Grid>
 
         <!-- Artifact Size Summary when not showing platform sizes -->
         <TextBlock
@@ -240,9 +206,50 @@
       </Grid>
     </Grid>
 
-    <!--  Status bar  -->
+    <!--  Reference string with copy button  -->
     <Grid
       Grid.Row="2"
+      Margin="10,0,10,5"
+      ColumnDefinitions="Auto,*,Auto">
+      <TextBlock
+        Grid.Column="0"
+        Margin="0,0,5,0"
+        VerticalAlignment="Center"
+        Text="Reference:" />
+      <TextBox
+        Grid.Column="1"
+        Padding="5,3"
+        VerticalAlignment="Center"
+        Background="Transparent"
+        BorderBrush="LightGray"
+        BorderThickness="1"
+        CornerRadius="3"
+        FontFamily="Consolas"
+        Text="{Binding SelectedTagReference}"
+        KeyDown="ReferenceTextBox_KeyDown"
+        Name="ReferenceTextBox" />
+      <Button
+        Grid.Column="2"
+        Width="24"
+        Height="24"
+        Margin="5,0,0,0"
+        Padding="0"
+        Command="{Binding CopyReferenceCommand}"
+        ToolTip.Tip="Copy reference to clipboard">
+        <Panel>
+          <Path
+            Width="16"
+            Height="16"
+            Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"
+            Fill="{DynamicResource ButtonForeground}"
+            Stretch="Uniform" />
+        </Panel>
+      </Button>
+    </Grid>
+
+    <!--  Status bar  -->
+    <Grid
+      Grid.Row="3"
       Height="30"
       Background="#f0f0f0"
       ColumnDefinitions="*,Auto">

@@ -67,4 +67,14 @@ public partial class MainView : UserControl
             e.Handled = true;
         }
     }
+    
+    private void ReferenceTextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && DataContext is MainViewModel viewModel)
+        {
+            // Execute the command to load the manifest by reference
+            viewModel.LoadManifestByReferenceCommand.Execute();
+            e.Handled = true;
+        }
+    }
 }

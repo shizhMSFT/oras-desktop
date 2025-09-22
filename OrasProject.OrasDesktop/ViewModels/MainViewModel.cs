@@ -51,6 +51,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> CopyManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
+        public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
 
         public MainViewModel()
         {
@@ -64,6 +65,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyManifestCommand = ReactiveCommand.CreateFromTask(CopyManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
+            LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
 
             // Setup property change handlers
             this.WhenAnyValue(x => x.SelectedRepository)
@@ -927,6 +929,319 @@ namespace OrasProject.OrasDesktop.ViewModels
                 StatusMessage = $"Error copying reference: {ex.Message}";
             }
         }
+
+        private async Task LoadManifestByReferenceAsync()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedTagReference))
+            {
+                StatusMessage = "Reference is empty";
+                return;
+            }
+
+            IsBusy = true;
+            StatusMessage = $"Processing reference {SelectedTagReference}...";
+
+            try
+            {
+                // Parse the reference string: <registry>/<repository>:<tag>
+                string reference = SelectedTagReference.Trim();
+                
+                // First, check if it's a digest reference (ends with @sha256:...)
+                bool isDigestReference = reference.Contains("@sha256:");
+                
+                // Check if it's a valid reference format
+                string fullRepository;
+                string tagOrDigest;
+                
+                if (isDigestReference)
+                {
+                    // Handle digest format: <registry>/<repository>@sha256:digest
+                    int atIndex = reference.LastIndexOf('@');
+                    if (atIndex <= 0)
+                    {
+                        StatusMessage = "Invalid reference format";
+                        return;
+                    }
+                    
+                    fullRepository = reference.Substring(0, atIndex);
+                    tagOrDigest = reference.Substring(atIndex + 1); // Include sha256: prefix
+                }
+                else
+                {
+                    // Handle tag format: <registry>/<repository>:<tag>
+                    int colonIndex = reference.LastIndexOf(':');
+                    if (colonIndex <= 0)
+                    {
+                        StatusMessage = "Invalid reference format";
+                        return;
+                    }
+                    
+                    fullRepository = reference.Substring(0, colonIndex);
+                    tagOrDigest = reference.Substring(colonIndex + 1);
+                }
+                
+                // Extract registry and repository parts
+                string registry;
+                string repository;
+                
+                // Find the first slash that separates registry from repository
+                int firstSlashIndex = fullRepository.IndexOf('/');
+                if (firstSlashIndex <= 0)
+                {
+                    StatusMessage = "Invalid reference format - missing registry or repository path";
+                    return;
+                }
+                
+                registry = fullRepository.Substring(0, firstSlashIndex);
+                repository = fullRepository.Substring(firstSlashIndex + 1);
+                
+                // Check if we need to connect to a different registry
+                bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);
+                
+                if (needToChangeRegistry)
+                {
+                    // Update the registry URL
+                    RegistryUrl = registry;
+                    
+                    // Connect to the new registry
+                    StatusMessage = $"Connecting to registry {registry}...";
+                    
+                    // Initialize with anonymous auth first
+                    _currentRegistry.Url = registry;
+                    _currentRegistry.AuthenticationType = AuthenticationType.None;
+                    _currentRegistry.Username = string.Empty;
+                    _currentRegistry.Password = string.Empty;
+                    _currentRegistry.Token = string.Empty;
+
+                    try
+                    {
+                        await _registryService.InitializeAsync(
+                            new RegistryConnection(
+                                _currentRegistry.Url,
+                                _currentRegistry.IsSecure,
+                                AuthType.Anonymous
+                            ),
+                            default
+                        );
+                        
+                        // Try to anonymously connect
+                        try
+                        {
+                            var repos = await _registryService.ListRepositoriesAsync(default);
+                            // Anonymous connection successful, load repositories
+                            var repositories = await BuildRepositoryTreeAsync();
+                            
+                            // Update the UI
+                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                Repositories.Clear();
+                                foreach (var repo in repositories)
+                                {
+                                    Repositories.Add(repo);
+                                }
+                                ApplyRepositoryFilter();
+                            });
+                            
+                            StatusMessage = $"Connected to registry {registry} (anonymous)";
+                        }
+                        catch (Exception)
+                        {
+                            // Anonymous connection failed, prompt for authentication
+                            var mainWindow = GetMainWindow();
+                            if (mainWindow == null)
+                            {
+                                StatusMessage = "Failed to get main window";
+                                return;
+                            }
+                            
+                            var result = await LoginDialog.ShowDialog(mainWindow, registry);
+                            if (!result.Result)
+                            {
+                                StatusMessage = "Authentication cancelled";
+                                return;
+                            }
+
+                            // Update registry with authentication information
+                            _currentRegistry.AuthenticationType = result.AuthType;
+                            _currentRegistry.Username = result.Username;
+                            _currentRegistry.Password = result.Password;
+                            _currentRegistry.Token = result.Token;
+
+                            // Reinitialize with supplied credentials
+                            await _registryService.InitializeAsync(
+                                new RegistryConnection(
+                                    _currentRegistry.Url,
+                                    _currentRegistry.IsSecure,
+                                    _currentRegistry.AuthenticationType switch
+                                    {
+                                        AuthenticationType.Basic => AuthType.Basic,
+                                        AuthenticationType.Token => AuthType.Bearer,
+                                        _ => AuthType.Anonymous,
+                                    },
+                                    _currentRegistry.Username,
+                                    _currentRegistry.Password,
+                                    _currentRegistry.Token
+                                ),
+                                default
+                            );
+
+                            try
+                            {
+                                // Get repositories with authentication
+                                var repos = await _registryService.ListRepositoriesAsync(default);
+                                var repositories = await BuildRepositoryTreeAsync();
+                                
+                                // Update the UI
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    Repositories.Clear();
+                                    foreach (var repo in repositories)
+                                    {
+                                        Repositories.Add(repo);
+                                    }
+                                    ApplyRepositoryFilter();
+                                });
+                                
+                                StatusMessage = $"Connected to registry {registry} (authenticated)";
+                            }
+                            catch (Exception ex)
+                            {
+                                StatusMessage = $"Connected to registry {registry}, but couldn't fetch repositories: {ex.Message}";
+                                // Clear repositories since we can't fetch them
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    Repositories.Clear();
+                                    ApplyRepositoryFilter();
+                                });
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        StatusMessage = $"Error connecting to registry {registry}: {ex.Message}";
+                        return;
+                    }
+                }
+                
+                // Now fetch tags for the repository if possible
+                try
+                {
+                    StatusMessage = $"Loading tags for repository {repository}...";
+                    var tagNames = await _registryService.ListTagsAsync(repository, default);
+                    
+                    // Create a tag collection
+                    var tags = new List<Tag>();
+                    
+                    // Create a dummy repository to hold the tags
+                    var dummyRepo = new Repository
+                    {
+                        Name = repository,
+                        FullPath = $"{_currentRegistry.Url}/{repository}",
+                        Registry = _currentRegistry,
+                        IsLeaf = true
+                    };
+                    
+                    foreach (var name in tagNames)
+                    {
+                        tags.Add(
+                            new Tag
+                            {
+                                Name = name,
+                                Repository = dummyRepo,
+                                CreatedAt = DateTimeOffset.Now,
+                            }
+                        );
+                    }
+                    
+                    // Sort tags by name
+                    tags.Sort();
+                    
+                    // Update UI
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        Tags.Clear();
+                        foreach (var tag in tags)
+                        {
+                            Tags.Add(tag);
+                        }
+                        
+                        // Try to find and select the repository in the tree
+                        FindAndSelectRepository(repository);
+                    });
+                    
+                    StatusMessage = $"Loaded {tags.Count} tags for {repository}";
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = $"Error loading tags for {repository}: {ex.Message}";
+                }
+                
+                // Now load the manifest
+                StatusMessage = $"Loading manifest for {reference}...";
+                
+                ManifestResult manifest;
+                
+                if (isDigestReference)
+                {
+                    manifest = await _registryService.GetManifestByDigestAsync(
+                        repository,
+                        tagOrDigest,
+                        default
+                    );
+                }
+                else
+                {
+                    manifest = await _registryService.GetManifestByTagAsync(
+                        repository,
+                        tagOrDigest,
+                        default
+                    );
+                }
+
+                // Create a new manifest object
+                _currentManifest = new Manifest
+                {
+                    RawContent = manifest.Json,
+                    Digest = manifest.Digest,
+                    // Tag will be null since we're not selecting from a repository/tag list
+                    MediaType = manifest.MediaType,
+                };
+                
+                ManifestContent = _currentManifest.RawContent;
+                
+                // Create a highlighted and selectable text block
+                ManifestViewer = _jsonHighlightService.HighlightJson(
+                    _currentManifest.RawContent,
+                    async (digest) => await LoadContentByDigestAsync(digest)
+                );
+                
+                // Calculate artifact size information
+                await CalculateArtifactSizeAsync(repository, manifest);
+                
+                // Load referrers
+                ProgressValue = 0;
+                IsProgressIndeterminate = false;
+                _ = LoadReferrersAsync(repository, _currentManifest.Digest);
+                
+                StatusMessage = $"Loaded manifest for {reference}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error processing reference: {ex.Message}";
+                ManifestContent = string.Empty;
+                ManifestViewer = null;
+            }
+            finally
+            {
+                IsBusy = false;
+                // Reset progress indicators for manifest loading
+                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                {
+                    IsProgressIndeterminate = false;
+                    ProgressValue = 0;
+                }
+            }
+        }
     }
 }
 
@@ -1041,6 +1356,96 @@ namespace OrasProject.OrasDesktop.ViewModels
                 clone.Children.Add(c);
             }
             return clone;
+        }
+        
+        private void FindAndSelectRepository(string repositoryPath)
+        {
+            // Split the repository path by slashes
+            var segments = repositoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+                return;
+                
+            // Try to find the repository in the tree
+            Repository? found = null;
+            
+            // First try to find an exact match by checking full paths
+            foreach (var repo in Repositories)
+            {
+                string repoFullPath = repo.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
+                if (string.Equals(repoFullPath, repositoryPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = repo;
+                    break;
+                }
+                
+                // Recursively search in children
+                found = FindRepositoryByPath(repo, repositoryPath);
+                if (found != null)
+                    break;
+            }
+            
+            // If not found, try to find a match by name segments
+            if (found == null)
+            {
+                // Try to find the repository by looking for the last segment
+                string lastSegment = segments[segments.Length - 1];
+                
+                // Look in all repositories for a match on the last segment
+                foreach (var repo in Repositories)
+                {
+                    if (string.Equals(repo.Name, lastSegment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = repo;
+                        break;
+                    }
+                    
+                    // Recursively search in children
+                    found = FindRepositoryByName(repo, lastSegment);
+                    if (found != null)
+                        break;
+                }
+            }
+            
+            // If found, select it
+            if (found != null)
+            {
+                SelectedRepository = found;
+            }
+        }
+        
+        private Repository? FindRepositoryByPath(Repository parent, string path)
+        {
+            // Check if this repository matches
+            string repoFullPath = parent.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
+            if (string.Equals(repoFullPath, path, StringComparison.OrdinalIgnoreCase))
+                return parent;
+                
+            // Check children
+            foreach (var child in parent.Children)
+            {
+                var found = FindRepositoryByPath(child, path);
+                if (found != null)
+                    return found;
+            }
+            
+            return null;
+        }
+        
+        private Repository? FindRepositoryByName(Repository parent, string name)
+        {
+            // Check if this repository matches
+            if (string.Equals(parent.Name, name, StringComparison.OrdinalIgnoreCase))
+                return parent;
+                
+            // Check children
+            foreach (var child in parent.Children)
+            {
+                var found = FindRepositoryByName(child, name);
+                if (found != null)
+                    return found;
+            }
+            
+            return null;
         }
     }
 }
