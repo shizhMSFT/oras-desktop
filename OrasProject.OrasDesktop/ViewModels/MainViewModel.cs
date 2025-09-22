@@ -50,6 +50,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
+        public ReactiveCommand<Unit, Unit> CopyDigestCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
         public ReactiveCommand<PlatformImageSize, Unit> ViewPlatformManifestCommand { get; }
@@ -65,6 +66,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
+            CopyDigestCommand = ReactiveCommand.CreateFromTask(CopyDigestToClipboardAsync);
             LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
 
@@ -929,6 +931,34 @@ namespace OrasProject.OrasDesktop.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"Error copying reference: {ex.Message}";
+            }
+        }
+        
+        private async Task CopyDigestToClipboardAsync()
+        {
+            if (CurrentManifest == null || string.IsNullOrEmpty(CurrentManifest.Digest))
+            {
+                StatusMessage = "No digest available";
+                return;
+            }
+
+            try
+            {
+                // Copy digest to clipboard
+                var topLevel = TopLevel.GetTopLevel(GetMainWindow());
+                if (topLevel != null)
+                {
+                    await topLevel.Clipboard!.SetTextAsync(CurrentManifest.Digest);
+                    StatusMessage = "Digest copied to clipboard";
+                }
+                else
+                {
+                    StatusMessage = "Failed to access clipboard";
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error copying digest: {ex.Message}";
             }
         }
 

@@ -99,27 +99,38 @@
         Grid.Column="2"
         Margin="5,0,10,10"
         RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
-          <TextBlock
-            FontWeight="Bold"
-            Text="Artifact Details" />
-          <TextBlock 
-            Text="{Binding CurrentManifest.Digest}"
-            FontFamily="Consolas"
-            FontSize="12"
-            Foreground="Gray"
-            IsVisible="{Binding CurrentManifest.Digest, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-            VerticalAlignment="Center" />
-        </StackPanel>
-
-        <!-- Artifact Size Summary when not showing platform sizes -->
         <TextBlock
-          Grid.Row="2"
-          Margin="0,0,0,5"
-          FontWeight="Normal"
-          FontStyle="Italic"
-          Text="{Binding ArtifactSizeSummary}"
-          IsVisible="{Binding !HasPlatformSizes}" />
+          Grid.Row="0"
+          Margin="0,0,0,10"
+          FontWeight="Bold"
+          FontSize="14"
+          Text="Artifact Details" />
+        
+        <!-- Digest with copy button -->
+        <Grid Grid.Row="1" Margin="0,0,0,5" ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Grid.Column="0" Text="Digest:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0" />
+          <TextBlock Grid.Column="1" Text="{Binding CurrentManifest.Digest}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Top"
+                     IsVisible="{Binding CurrentManifest.Digest, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Margin="5,2,0,0" />
+          <Button Grid.Column="2" Width="28" Height="28" Padding="0" HorizontalAlignment="Right" Background="Transparent"
+                  Command="{Binding CopyDigestCommand}" 
+                  IsEnabled="{Binding CurrentManifest.Digest, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                  ToolTip.Tip="Copy digest to clipboard"
+                  VerticalAlignment="Top">
+            <Path
+              Width="14"
+              Height="14"
+              Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"
+              Fill="{DynamicResource ButtonForeground}"
+              Stretch="Uniform" />
+          </Button>
+        </Grid>
+        
+        <!-- Size information -->
+        <Grid Grid.Row="2" Margin="0,0,0,10" ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Text="Size:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0" />
+          <TextBlock Grid.Column="1" Text="{Binding ArtifactSizeSummary}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Top"
+                     IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Margin="5,2,0,0" />
+        </Grid>
 
         <!-- Platform Image Sizes -->
         <Grid Grid.Row="3" Margin="0,0,0,5" IsVisible="{Binding HasPlatformSizes}">
@@ -169,7 +180,7 @@
         </Grid>
 
         <StackPanel
-          Grid.Row="4"
+          Grid.Row="3"
           Margin="0,0,0,5"
           Orientation="Horizontal"
           Spacing="5">
