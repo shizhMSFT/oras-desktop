@@ -23,28 +23,17 @@
     <Grid
       Grid.Row="0"
       Margin="10"
-      ColumnDefinitions="Auto,*,Auto">
+      ColumnDefinitions="Auto,*">
       <StackPanel
         Grid.Column="0"
         Orientation="Horizontal"
         Spacing="5">
-        <TextBlock VerticalAlignment="Center" Text="Registry URL:" />
+        <TextBlock VerticalAlignment="Center" Text="Registry:" />
         <TextBox
           Width="250"
           Text="{Binding RegistryUrl}"
-          Watermark="Enter registry URL (e.g., mcr.microsoft.com)" />
-        <Button Command="{Binding ConnectCommand}" Content="Connect" />
-      </StackPanel>
-      <StackPanel
-        Grid.Column="2"
-        Orientation="Horizontal"
-        Spacing="5">
-        <TextBlock VerticalAlignment="Center" Text="Authentication:" />
-        <ComboBox
-          Width="120"
-          ItemsSource="{Binding AuthTypes}"
-          SelectedItem="{Binding SelectedAuthType}" />
-        <Button Command="{Binding LoginCommand}" Content="Login" />
+          Watermark="Enter registry (e.g., mcr.microsoft.com)" />
+        <Button Name="ConnectButton" Command="{Binding ConnectCommand}" Content="Connect" ToolTip.Tip="Click to connect anonymously, or hold Shift to force login" />
       </StackPanel>
     </Grid>
 
