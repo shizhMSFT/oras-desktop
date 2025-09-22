@@ -23,6 +23,11 @@ namespace OrasProject.OrasDesktop.Models
         public double RelativePercentage { get; set; } = 100.0;
         
         /// <summary>
+        /// Gets or sets the digest of the platform-specific manifest
+        /// </summary>
+        public string Digest { get; set; } = string.Empty;
+        
+        /// <summary>
         /// Gets a human-readable representation of the size
         /// </summary>
         public string HumanReadableSize => FormatSize(SizeInBytes);

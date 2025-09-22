@@ -145,8 +145,16 @@
                   <DataTemplate>
                     <Border Margin="0,2" Padding="6,4" BorderBrush="LightGray" BorderThickness="0,0,0,1">
                       <Grid ColumnDefinitions="Auto,*,Auto">
-                        <TextBlock Grid.Column="0" Text="{Binding Platform}" FontFamily="Consolas" 
-                                  FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Button Grid.Column="0" Padding="4,2" Background="Transparent" 
+                                BorderThickness="0" Cursor="Hand"
+                                Command="{Binding DataContext.ViewPlatformManifestCommand, 
+                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="Click to view platform-specific manifest">
+                          <TextBlock Text="{Binding Platform}" FontFamily="Consolas" 
+                                    FontWeight="SemiBold" VerticalAlignment="Center"
+                                    Foreground="#0066cc"/>
+                        </Button>
                         <ProgressBar Grid.Column="1" Margin="12,0" Height="8" Minimum="0" Maximum="100" 
                                     Value="{Binding RelativePercentage}" Background="Transparent" Foreground="#99ccff"/>
                         <TextBlock Grid.Column="2" Text="{Binding HumanReadableSize}" 
