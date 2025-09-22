@@ -54,15 +54,19 @@
       <Grid
         Grid.Column="0"
         Margin="10,0,5,10"
-        RowDefinitions="Auto,*">
+        RowDefinitions="Auto,Auto,*">
         <TextBlock
           Grid.Row="0"
-          Margin="0,0,0,5"
+          Margin="0,0,0,2"
           FontWeight="Bold"
           Text="Repositories" />
-        <TreeView
+        <TextBox
           Grid.Row="1"
-          ItemsSource="{Binding Repositories}"
+          Watermark="Filter repositories..."
+          Text="{Binding RepositoryFilterText}" />
+        <TreeView
+          Grid.Row="2"
+          ItemsSource="{Binding FilteredRepositories}"
           SelectedItem="{Binding SelectedRepository}">
           <TreeView.ItemTemplate>
             <TreeDataTemplate ItemsSource="{Binding Children}">
