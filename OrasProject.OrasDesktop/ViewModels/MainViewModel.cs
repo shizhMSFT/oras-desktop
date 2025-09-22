@@ -10,6 +10,7 @@ using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
 using ReactiveUI;
+using System.Text.Json;
 
 namespace OrasProject.OrasDesktop.ViewModels
 {
@@ -46,6 +47,9 @@ namespace OrasProject.OrasDesktop.ViewModels
         private double _progressValue;
         private bool _isProgressIndeterminate;
         private string _repositoryFilterText = string.Empty;
+        private string _artifactSizeSummary = string.Empty;
+        private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
+        private bool _hasPlatformSizes = false;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -82,6 +86,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                     ReferrersLoading = false;
                     // Reset progress bar to default state
                     ProgressValue = 0;
+                    // Clear size information
+                    ArtifactSizeSummary = string.Empty;
+                    PlatformImageSizes.Clear();
+                    HasPlatformSizes = false;
                     await LoadManifestAsync(tag);
                 });
 
@@ -225,6 +233,24 @@ namespace OrasProject.OrasDesktop.ViewModels
                     ApplyRepositoryFilter();
                 }
             }
+        }
+
+        public string ArtifactSizeSummary
+        {
+            get => _artifactSizeSummary;
+            set => this.RaiseAndSetIfChanged(ref _artifactSizeSummary, value);
+        }
+
+        public ObservableCollection<PlatformImageSize> PlatformImageSizes
+        {
+            get => _platformImageSizes;
+            set => this.RaiseAndSetIfChanged(ref _platformImageSizes, value);
+        }
+
+        public bool HasPlatformSizes
+        {
+            get => _hasPlatformSizes;
+            set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
         }
 
         public ObservableCollection<string> AuthTypes
@@ -478,6 +504,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                     async (digest) => await LoadContentByDigestAsync(digest)
                 );
 
+                // Calculate artifact size information
+                await CalculateArtifactSizeAsync(repoPath, manifest);
+
                 // Kick off referrers load (fire and forget, separate status message)
                 ProgressValue = 0;
                 IsProgressIndeterminate = false;
@@ -526,6 +555,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                     async (digestValue) => await LoadContentByDigestAsync(digestValue)
                 );
 
+                // Calculate artifact size
+                await CalculateArtifactSizeAsync(repoPath, manifest);
+
                 // Reset progress state before loading referrers
                 ProgressValue = 0;
                 IsProgressIndeterminate = false;
@@ -542,6 +574,45 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Calculates and updates artifact size information for the current manifest
+        /// </summary>
+        private async Task CalculateArtifactSizeAsync(string repositoryPath, ManifestResult manifest)
+        {
+            try
+            {
+                // Reset previous data
+                PlatformImageSizes.Clear();
+                HasPlatformSizes = false;
+                
+                // Calculate new size information
+                var (summary, platformSizes, hasPlatforms) = await ArtifactSizeCalculator.AnalyzeManifestSizeAsync(
+                    _registryService, 
+                    repositoryPath,
+                    manifest, 
+                    default);
+                    
+                // Update UI
+                ArtifactSizeSummary = summary;
+                
+                if (hasPlatforms && platformSizes.Count > 0)
+                {
+                    // Sort platforms alphabetically
+                    foreach (var platform in platformSizes.OrderBy(p => p.Platform))
+                    {
+                        PlatformImageSizes.Add(platform);
+                    }
+                    HasPlatformSizes = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // In case of errors, just show basic information
+                ArtifactSizeSummary = $"Size calculation error: {ex.Message}";
+                HasPlatformSizes = false;
             }
         }
 
