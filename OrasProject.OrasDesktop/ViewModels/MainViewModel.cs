@@ -1284,10 +1284,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
                 
-                // Update the selected tag reference to include the platform
+                // Update the selected tag reference to use the digest of the platform-specific manifest
                 if (SelectedTag != null)
                 {
-                    SelectedTagReference = $"{SelectedTag.FullReference} ({platformSize.Platform})";
+                    string repository = SelectedTag.Repository!.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
+                    SelectedTagReference = $"{_currentRegistry.Url}/{repository}@{platformSize.Digest}";
                 }
 
                 // Kick off referrers load (fire and forget, separate status message)
