@@ -177,10 +177,6 @@
             Command="{Binding DeleteManifestCommand}"
             Content="Delete"
             IsEnabled="{Binding CanModifySelectedTag}" />
-          <Button
-            Command="{Binding CopyManifestCommand}"
-            Content="Copy"
-            IsEnabled="{Binding CanModifySelectedTag}" />
         </StackPanel>
         
         <!-- TabControl for Manifest and Referrers -->
