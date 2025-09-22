@@ -290,6 +290,12 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             try
             {
+                // Store the original registry credentials in case we need to restore them
+                var originalAuthType = _currentRegistry.AuthenticationType;
+                var originalUsername = _currentRegistry.Username;
+                var originalPassword = _currentRegistry.Password;
+                var originalToken = _currentRegistry.Token;
+                
                 _currentRegistry.Url = RegistryUrl;
 
                 // Initialize with anonymous auth first
@@ -321,6 +327,31 @@ namespace OrasProject.OrasDesktop.ViewModels
                     if (!result.Result)
                     {
                         StatusMessage = "Authentication cancelled";
+                        
+                        // Restore original credentials
+                        _currentRegistry.AuthenticationType = originalAuthType;
+                        _currentRegistry.Username = originalUsername;
+                        _currentRegistry.Password = originalPassword;
+                        _currentRegistry.Token = originalToken;
+                        
+                        // Reinitialize with original credentials
+                        await _registryService.InitializeAsync(
+                            new RegistryConnection(
+                                _currentRegistry.Url,
+                                _currentRegistry.IsSecure,
+                                _currentRegistry.AuthenticationType switch
+                                {
+                                    AuthenticationType.Basic => AuthType.Basic,
+                                    AuthenticationType.Token => AuthType.Bearer,
+                                    _ => AuthType.Anonymous,
+                                },
+                                _currentRegistry.Username,
+                                _currentRegistry.Password,
+                                _currentRegistry.Token
+                            ),
+                            default
+                        );
+                        
                         return;
                     }
                     
@@ -387,6 +418,31 @@ namespace OrasProject.OrasDesktop.ViewModels
                     if (!result.Result)
                     {
                         StatusMessage = "Authentication cancelled";
+                        
+                        // Restore original credentials
+                        _currentRegistry.AuthenticationType = originalAuthType;
+                        _currentRegistry.Username = originalUsername;
+                        _currentRegistry.Password = originalPassword;
+                        _currentRegistry.Token = originalToken;
+                        
+                        // Reinitialize with original credentials
+                        await _registryService.InitializeAsync(
+                            new RegistryConnection(
+                                _currentRegistry.Url,
+                                _currentRegistry.IsSecure,
+                                _currentRegistry.AuthenticationType switch
+                                {
+                                    AuthenticationType.Basic => AuthType.Basic,
+                                    AuthenticationType.Token => AuthType.Bearer,
+                                    _ => AuthType.Anonymous,
+                                },
+                                _currentRegistry.Username,
+                                _currentRegistry.Password,
+                                _currentRegistry.Token
+                            ),
+                            default
+                        );
+                        
                         return;
                     }
 
