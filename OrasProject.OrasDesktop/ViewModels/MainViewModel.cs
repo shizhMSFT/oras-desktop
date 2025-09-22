@@ -535,10 +535,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 ManifestContent = CurrentManifest.RawContent;
                 
                 // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(
-                    CurrentManifest.RawContent,
-                    async (digest) => await LoadContentByDigestAsync(digest)
-                );
+                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
                 // Calculate artifact size information
                 await CalculateArtifactSizeAsync(repoPath, manifest);
@@ -560,69 +557,6 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 IsBusy = false;
                 // Reset progress indicators for manifest loading
-                if (!ReferrersLoading) // Don't reset if referrers are still loading
-                {
-                    IsProgressIndeterminate = false;
-                    ProgressValue = 0;
-                }
-            }
-        }
-
-        private async Task LoadContentByDigestAsync(string digest)
-        {
-            if (SelectedRepository == null)
-            {
-                return;
-            }
-
-            IsBusy = true;
-            StatusMessage = $"Loading content for {digest}...";
-
-            try
-            {
-                var repoPath = SelectedRepository.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
-                    string.Empty
-                );
-                var manifest = await _registryService.GetManifestByDigestAsync(
-                    repoPath,
-                    digest,
-                    default
-                );
-                CurrentManifest = new Manifest
-                {
-                    RawContent = manifest.Json,
-                    Digest = manifest.Digest,
-                    MediaType = manifest.MediaType,
-                };
-                ManifestContent = manifest.Json;
-                
-                // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(
-                    manifest.Json,
-                    async (digestValue) => await LoadContentByDigestAsync(digestValue)
-                );
-
-                // Calculate artifact size
-                await CalculateArtifactSizeAsync(repoPath, manifest);
-
-                // Reset progress state before loading referrers
-                ProgressValue = 0;
-                IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repoPath, manifest.Digest);
-
-                StatusMessage = $"Loaded content for {digest}";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error loading content: {ex.Message}";
-                ManifestContent = string.Empty;
-                ManifestViewer = null;
-            }
-            finally
-            {
-                IsBusy = false;
-                // Reset progress indicators for digest content loading
                 if (!ReferrersLoading) // Don't reset if referrers are still loading
                 {
                     IsProgressIndeterminate = false;
@@ -1222,10 +1156,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 ManifestContent = CurrentManifest.RawContent;
                 
                 // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(
-                    CurrentManifest.RawContent,
-                    async (digest) => await LoadContentByDigestAsync(digest)
-                );
+                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
                 
                 // Calculate artifact size information
                 await CalculateArtifactSizeAsync(repository, manifest);
