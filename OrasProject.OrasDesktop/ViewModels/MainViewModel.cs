@@ -40,6 +40,10 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         private string _selectedTagReference = string.Empty;
         private string _manifestContent = string.Empty;
+        private ObservableCollection<ReferrerNode> _referrers = new();
+        private bool _referrersLoading;
+        private double _progressValue;
+        private bool _isProgressIndeterminate;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -72,6 +76,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                 .Subscribe(async tag =>
                 {
                     SelectedTagReference = tag.FullReference;
+                    Referrers.Clear();
+                    ReferrersLoading = false;
+                    // Reset progress bar to default state
+                    ProgressValue = 0;
                     await LoadManifestAsync(tag);
                 });
 
@@ -145,6 +153,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (this.RaiseAndSetIfChanged(ref _isBusy, value))
                 {
                     this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                    
+                    // If we're setting busy to true, make the progress bar indeterminate
+                    // unless we're specifically loading referrers
+                    if (value && !ReferrersLoading)
+                    {
+                        IsProgressIndeterminate = true;
+                    }
+                    else if (!value)
+                    {
+                        // If we're no longer busy, hide the progress indicator
+                        // unless referrers are still loading
+                        IsProgressIndeterminate = ReferrersLoading;
+                    }
                 }
             }
         }
@@ -159,6 +180,30 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _manifestContent;
             set => this.RaiseAndSetIfChanged(ref _manifestContent, value);
+        }
+
+        public ObservableCollection<ReferrerNode> Referrers
+        {
+            get => _referrers;
+            set => this.RaiseAndSetIfChanged(ref _referrers, value);
+        }
+
+        public bool ReferrersLoading
+        {
+            get => _referrersLoading;
+            set => this.RaiseAndSetIfChanged(ref _referrersLoading, value);
+        }
+
+        public double ProgressValue
+        {
+            get => _progressValue;
+            set => this.RaiseAndSetIfChanged(ref _progressValue, value);
+        }
+
+        public bool IsProgressIndeterminate
+        {
+            get => _isProgressIndeterminate;
+            set => this.RaiseAndSetIfChanged(ref _isProgressIndeterminate, value);
         }
 
         public ObservableCollection<string> AuthTypes
@@ -410,6 +455,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     async (digest) => await LoadContentByDigestAsync(digest)
                 );
 
+                // Kick off referrers load (fire and forget, separate status message)
+                ProgressValue = 0;
+                IsProgressIndeterminate = false;
+                _ = LoadReferrersAsync(repoPath, _currentManifest.Digest);
+
                 StatusMessage = $"Loaded manifest for {tag.Name}";
             }
             catch (Exception ex)
@@ -453,6 +503,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     async (digestValue) => await LoadContentByDigestAsync(digestValue)
                 );
 
+                // Reset progress state before loading referrers
+                ProgressValue = 0;
+                IsProgressIndeterminate = false;
+                _ = LoadReferrersAsync(repoPath, manifest.Digest);
+
                 StatusMessage = $"Loaded content for {digest}";
             }
             catch (Exception ex)
@@ -464,6 +519,66 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        private async Task LoadReferrersAsync(string repositoryPath, string digest)
+        {
+            ReferrersLoading = true;
+            IsProgressIndeterminate = false;
+            ProgressValue = 0;
+            try
+            {
+                // Use a progress handler to update both the status message and progress bar
+                var progress = new Progress<int>(count =>
+                {
+                    StatusMessage = $"Loading referrers ({count})...";
+                    // Set an indeterminate progress at first to show activity
+                    if (count == 1)
+                    {
+                        ProgressValue = 0;
+                    }
+                    else 
+                    {
+                        // Once we start getting counts, update the progress
+                        // We don't know the total in advance, so we'll use a fixed scale up to 100
+                        // and clamp it between 0-100
+                        ProgressValue = Math.Min(count, 100);
+                    }
+                });
+                var nodes = await _registryService.GetReferrersRecursiveAsync(repositoryPath, digest, progress, default);
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    Referrers.Clear();
+                    foreach (var n in nodes)
+                        Referrers.Add(n);
+                });
+                // Count total descriptor referrers (exclude group and annotation key/value leaves)
+                int total = 0;
+                void CountNode(ReferrerNode n)
+                {
+                    if (n.Info != null) total++;
+                    foreach (var c in n.Children) CountNode(c);
+                }
+                foreach (var root in nodes) CountNode(root);
+                StatusMessage = $"Loaded referrers ({total})";
+                // Set progress to 100% when complete
+                ProgressValue = 100;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading referrers: {ex.Message}";
+                Referrers.Clear();
+            }
+            finally
+            {
+                ReferrersLoading = false;
+                // Reset progress bar state if no other operation is busy
+                if (!IsBusy)
+                {
+                    IsProgressIndeterminate = false;
+                    ProgressValue = 0;
+                }
             }
         }
 

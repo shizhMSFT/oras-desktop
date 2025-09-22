@@ -16,16 +16,16 @@ The [OrasProject.Oras](https://www.nuget.org/packages/OrasProject.Oras/0.3.0) Nu
 
 ### Core Capabilities & UI Implementation
 
-| Capability | API Concept | UI Implementation |
-|------------|-------------|-------------------|
-| Authentication | Client config with credentials | Login dialog → client instance |
-| Repository Listing | `ListRepositoriesAsync` | TreeView root nodes |
-| Tag Listing | `ListTagsAsync(repo)` | ListBox when repo selected |
-| Manifest Retrieval | `GetManifestAsync(repo, ref)` | JSON display with clickable digests |
-| Blob/Layer Access | `GetBlobAsync(repo, digest)` | JSON display or metadata |
-| Artifact Copy | High-level copy API | Copy button with target selection |
-| Manifest Deletion | `DeleteAsync(repo, digest)` | Delete button for selected item |
-| Referrers API | Attach/list referrers | Future supply chain visualization |
+| Capability         | API Concept                    | UI Implementation                       |
+| ------------------ | ------------------------------ | --------------------------------------- |
+| Authentication     | Client config with credentials | Login dialog → client instance          |
+| Repository Listing | `ListRepositoriesAsync`        | TreeView root nodes                     |
+| Tag Listing        | `ListTagsAsync(repo)`          | ListBox when repo selected              |
+| Manifest Retrieval | `GetManifestAsync(repo, ref)`  | JSON display with clickable digests     |
+| Blob/Layer Access  | `GetBlobAsync(repo, digest)`   | JSON display or metadata                |
+| Artifact Copy      | High-level copy API            | Copy button with target selection       |
+| Manifest Deletion  | `DeleteAsync(repo, digest)`    | Delete button for selected item         |
+| Referrers API      | Attach/list referrers          | TreeView with grouping by artifact type |
 
 ### Service Layer Design
 
@@ -37,11 +37,30 @@ public interface IRegistryService {
   Task<ManifestResult> GetManifestByDigestAsync(string repository, string digest, CancellationToken ct);
   Task DeleteManifestAsync(string repository, string digest, CancellationToken ct);
   Task CopyAsync(CopyRequest request, IProgress<CopyProgress>? progress, CancellationToken ct);
+  Task<IReadOnlyList<ReferrerNode>> GetReferrersRecursiveAsync(
+    string repository,
+    string rootDigest,
+    IProgress<int>? progress,
+    CancellationToken ct
+  );
 }
 
 public record ManifestResult(string Digest, string MediaType, string Json, IReadOnlyList<string> ReferencedDigests);
 public record CopyRequest(string SourceRepository, string Reference, string TargetRepository, string? TargetTag);
 public record CopyProgress(string Stage, long? Completed, long? Total);
+public record ReferrerInfo(
+    string Digest,
+    string MediaType,
+    string ArtifactType,
+    IReadOnlyDictionary<string, string> Annotations
+);
+public record ReferrerNode(
+    string Id,
+    string Display,
+    bool IsGroup,
+    ReferrerInfo? Info,
+    IReadOnlyList<ReferrerNode> Children
+);
 ```
 
 ### Technical Implementation Notes
@@ -51,6 +70,8 @@ public record CopyProgress(string Stage, long? Completed, long? Total);
 - **Error Handling**: Mapped responses (auth failures → login prompt, 404 → "Not found" message)
 - **Security**: In-memory credential storage only, no persistence in MVP
 - **Performance**: Stream large manifests, truncate display >2MB
+- **Referrers Implementation**: Recursive tree structure grouped by artifact type with annotation display
+- **Progress Tracking**: Both determinate and indeterminate progress modes for different operations
 - **Code Cleanliness**: Removed unused `using` directives and legacy code that was replaced by the ORAS .NET SDK
 
 ## Avalonia UI Framework
