@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -6,6 +6,7 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
@@ -425,6 +426,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                     StatusMessage = "Connected to registry (authenticated)";
                 }
             }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
+            }
             catch (Exception ex)
             {
                 StatusMessage = $"Error connecting to registry: {ex.Message}";
@@ -472,15 +477,41 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Sort tags by name using IComparable implementation
                 tags.Sort();
 
+                // Store the currently selected tag name if any
+                string? selectedTagName = SelectedTag?.Name;
+
                 Tags.Clear();
                 foreach (var tag in tags)
                 {
                     Tags.Add(tag);
                 }
 
+                // Try to reselect the previously selected tag if it still exists
+                if (selectedTagName != null)
+                {
+                    var tagToSelect = Tags.FirstOrDefault(t => t.Name == selectedTagName);
+                    if (tagToSelect != null)
+                    {
+                        SelectedTag = tagToSelect;
+                    }
+                    else
+                    {
+                        // Clear selection if the tag no longer exists
+                        SelectedTag = null;
+                        // Also clear manifest display since the tag is gone
+                        ManifestContent = string.Empty;
+                        ManifestViewer = null;
+                        Referrers.Clear();
+                    }
+                }
+
                 // Digest resolution removed for performance; resolved only when required for delete.
 
                 StatusMessage = $"Loaded {tags.Count} tags for {repository.Name}";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
             }
             catch (Exception ex)
             {
@@ -548,6 +579,12 @@ namespace OrasProject.OrasDesktop.ViewModels
                 _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
 
                 StatusMessage = $"Loaded manifest for {tag.Name}";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
+                ManifestContent = string.Empty;
+                ManifestViewer = null;
             }
             catch (Exception ex)
             {
@@ -649,6 +686,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Set progress to 100% when complete
                 ProgressValue = 100;
             }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
+                Referrers.Clear();
+            }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading referrers: {ex.Message}";
@@ -724,6 +766,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     Width = 80,
                                     [Grid.ColumnProperty] = 1,
                                     Tag = true,
+                                    Classes = { "Danger" },
+                                    Background = new SolidColorBrush(Color.Parse("#d9534f")),
+                                    Foreground = Brushes.White,
                                 },
                             },
                         },
@@ -753,6 +798,9 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             IsBusy = true;
             StatusMessage = $"Deleting manifest for {SelectedTag.Name}...";
+            
+            // Store the tag name before deletion to use in status message later
+            string tagName = SelectedTag.Name;
 
             try
             {
@@ -763,7 +811,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 var manifest = await _registryService.GetManifestByTagAsync(
                     repoPath,
-                    SelectedTag.Name,
+                    tagName,
                     default
                 );
                 await _registryService.DeleteManifestAsync(repoPath, manifest.Digest, default);
@@ -771,7 +819,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                StatusMessage = $"Deleted manifest for {SelectedTag.Name}";
+                StatusMessage = $"Deleted manifest for {tagName}";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
             }
             catch (Exception ex)
             {
@@ -833,6 +885,10 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 StatusMessage =
                     $"Copied manifest for {SelectedTag.Name} to {result.DestinationTag}";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
             }
             catch (Exception ex)
             {
