@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\OrasProject.OrasDesktop\Assets\oras-logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
