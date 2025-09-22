@@ -21,6 +21,15 @@ public interface IRegistryService
     );
     Task DeleteManifestAsync(string repository, string digest, CancellationToken ct);
     Task CopyAsync(CopyRequest request, IProgress<CopyProgress>? progress, CancellationToken ct);
+    /// <summary>
+    /// Recursively fetch referrers for a manifest digest. Returns a tree of referrers grouped by artifact type.
+    /// </summary>
+    Task<IReadOnlyList<ReferrerNode>> GetReferrersRecursiveAsync(
+        string repository,
+        string rootDigest,
+        IProgress<int>? progress,
+        CancellationToken ct
+    );
 }
 
 /// <param name="Registry">Registry hostname (e.g., ghcr.io)</param>
@@ -70,3 +79,25 @@ public record CopyRequest(
 );
 
 public record CopyProgress(string Stage, long? Completed, long? Total);
+
+/// <summary>
+/// Basic info for a referrer descriptor plus resolved annotations needed for display.
+/// </summary>
+public record ReferrerInfo(
+    string Digest,
+    string MediaType,
+    string ArtifactType,
+    IReadOnlyDictionary<string, string> Annotations
+);
+
+/// <summary>
+/// Node in a recursive referrer tree. Children are already grouped under artifact type grouping nodes.
+/// If <see cref="IsGroup"/> is true, the node represents an artifact type grouping and <see cref="Info"/> will be null.
+/// </summary>
+public record ReferrerNode(
+    string Id,
+    string Display,
+    bool IsGroup,
+    ReferrerInfo? Info,
+    IReadOnlyList<ReferrerNode> Children
+);

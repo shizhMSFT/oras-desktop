@@ -156,6 +156,116 @@ public sealed class RegistryService : IRegistryService
         progress?.Report(new CopyProgress("Completed", 1, 1));
     }
 
+    public async Task<IReadOnlyList<ReferrerNode>> GetReferrersRecursiveAsync(
+        string repository,
+        string rootDigest,
+        IProgress<int>? progress,
+        CancellationToken ct
+    )
+    {
+        EnsureInitialized();
+        var repo = await _registry!.GetRepositoryAsync(repository, ct);
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootDigest };
+        int count = 0;
+
+        async Task<List<ReferrerInfo>> FetchDirectAsync(string digest)
+        {
+            var list = new List<ReferrerInfo>();
+            try
+            {
+                var desc = await repo.ResolveAsync(digest, ct);
+                if (repo is Repository concrete)
+                {
+                    await foreach (var referrer in concrete.FetchReferrersAsync(desc, ct))
+                    {
+                        string artifactType = string.Empty;
+                        try { artifactType = referrer.ArtifactType ?? string.Empty; } catch { }
+                        var annotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        if (referrer.Annotations is not null)
+                        {
+                            foreach (var kv in referrer.Annotations)
+                                annotations[kv.Key] = kv.Value;
+                        }
+                        list.Add(new ReferrerInfo(referrer.Digest, referrer.MediaType, artifactType, annotations));
+                        progress?.Report(++count);
+                    }
+                }
+                else
+                {
+                    // Repository implementation doesn't expose referrers API; return empty.
+                }
+            }
+            catch
+            {
+                // ignore errors; empty list returned
+            }
+            return list;
+        }
+
+        async Task<ReferrerNode> BuildNodeAsync(ReferrerInfo info)
+        {
+            // Recurse to children unless cycle
+            List<ReferrerNode> children = new();
+            if (visited.Add(info.Digest))
+            {
+                var direct = await FetchDirectAsync(info.Digest);
+                children = await GroupAndBuildAsync(direct);
+            }
+            // Insert annotations group if any
+            if (info.Annotations.Count > 0)
+            {
+                var annotationChildren = info.Annotations
+                    .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(kv => new ReferrerNode(
+                        kv.Key,
+                        $"{kv.Key}: \"{kv.Value}\"",
+                        false,
+                        null,
+                        Array.Empty<ReferrerNode>()
+                    ))
+                    .ToList();
+                var annotationsGroup = new ReferrerNode(
+                    info.Digest + ":annotations",
+                    "[annotations]",
+                    true,
+                    null,
+                    annotationChildren
+                );
+                children.Insert(0, annotationsGroup);
+            }
+            return new ReferrerNode(info.Digest, info.Digest, false, info, children);
+        }
+
+        async Task<List<ReferrerNode>> GroupAndBuildAsync(List<ReferrerInfo> infos)
+        {
+            var groups = infos
+                .GroupBy(i => string.IsNullOrWhiteSpace(i.ArtifactType) ? i.MediaType : i.ArtifactType)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+            var result = new List<ReferrerNode>();
+            foreach (var g in groups)
+            {
+                var childNodes = new List<ReferrerNode>();
+                foreach (var info in g.OrderBy(i => i.Digest, StringComparer.OrdinalIgnoreCase))
+                {
+                    childNodes.Add(await BuildNodeAsync(info));
+                }
+                result.Add(
+                    new ReferrerNode(
+                        g.Key,
+                        g.Key,
+                        true,
+                        null,
+                        childNodes
+                    )
+                );
+            }
+            return result;
+        }
+
+        var top = await FetchDirectAsync(rootDigest);
+        return await GroupAndBuildAsync(top);
+    }
+
     /// <summary>
     /// Extract digests from a manifest JSON string.
     /// </summary>
