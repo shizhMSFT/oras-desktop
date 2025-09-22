@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -6,6 +6,7 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
@@ -724,6 +725,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     Width = 80,
                                     [Grid.ColumnProperty] = 1,
                                     Tag = true,
+                                    Classes = { "Danger" },
+                                    Background = new SolidColorBrush(Color.Parse("#d9534f")),
+                                    Foreground = Brushes.White,
                                 },
                             },
                         },
@@ -772,6 +776,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                 await RefreshTagsAsync();
 
                 StatusMessage = $"Deleted manifest for {SelectedTag.Name}";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
             }
             catch (Exception ex)
             {

@@ -136,10 +136,43 @@ public sealed class RegistryService : IRegistryService
 
     public async Task DeleteManifestAsync(string repository, string digest, CancellationToken ct)
     {
-        EnsureInitialized();
-        var repo = await _registry!.GetRepositoryAsync(repository, ct);
-        var desc = await repo.ResolveAsync(digest, ct);
-        await repo.DeleteAsync(desc, ct);
+        try
+        {
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            var desc = await repo.ResolveAsync(digest, ct);
+            await repo.DeleteAsync(desc, ct);
+        }
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            // Extract meaningful information from the ResponseException
+            string errorMessage = $"HTTP {respEx.StatusCode}";
+            
+            // Add specific error messages based on status code
+            switch (respEx.StatusCode)
+            {
+                case System.Net.HttpStatusCode.Unauthorized:
+                    errorMessage = "Unauthorized: Authentication required or credentials invalid";
+                    break;
+                case System.Net.HttpStatusCode.Forbidden:
+                    errorMessage = "Forbidden: You don't have permission to delete this manifest";
+                    break;
+                case System.Net.HttpStatusCode.NotFound:
+                    errorMessage = "Not Found: The manifest does not exist or has already been deleted";
+                    break;
+                case System.Net.HttpStatusCode.MethodNotAllowed:
+                    errorMessage = "Method Not Allowed: This registry doesn't support deletion";
+                    break;
+                case (System.Net.HttpStatusCode)429:
+                    errorMessage = "Too Many Requests: Please try again later";
+                    break;
+                case System.Net.HttpStatusCode.InternalServerError:
+                    errorMessage = "Internal Server Error: The registry encountered an error";
+                    break;
+            }
+            
+            throw new RegistryOperationException($"Delete failed: {errorMessage}", respEx);
+        }
     }
 
     public async Task CopyAsync(
