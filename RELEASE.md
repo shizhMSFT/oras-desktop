@@ -11,6 +11,7 @@
 - Update version in `Directory.Build.props` if needed
 - Verify `<RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>` in project files
 - Test build: `dotnet restore && dotnet build --configuration Release`
+- Test publish: `dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -r win-x64 -o ./publish`
 
 ### 2. Create Tag
 ```bash
@@ -79,7 +80,7 @@ Get-Content oras-desktop_VERSION_checksums.txt |
 ## Build Configuration
 - All platforms: `-p:PublishReadyToRun=true` for better startup
 - All platforms: `-p:PublishSingleFile=true` for single executable
-- All platforms: `-p:PublishTrimmed=true` for smaller size
+- All platforms: `-p:PublishTrimmed=true` for smaller size (optional, produces warnings)
 - Restore with `-p:PublishReadyToRun=true` for required runtime packages
 
 ## macOS Code Signing
@@ -91,4 +92,6 @@ The macOS app is ad-hoc signed (`codesign -s -`), which:
 ## Troubleshooting
 1. Check GitHub Actions logs
 2. Verify permissions and tag format
-3. For ReadyToRun errors, ensure packages are restored with `-p:PublishReadyToRun=true`
+3. For ReadyToRun errors, ensure the project is built for the target runtime before publishing
+4. Don't use `--no-build` flag with ReadyToRun unless you've already built for the specific runtime
+5. When using `PublishTrimmed=true`, expect warnings related to reflection in Avalonia UI and JSON serialization

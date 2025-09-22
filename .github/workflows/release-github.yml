@@ -53,7 +53,9 @@ jobs:
             RID="osx-arm64"
           fi
           # Enable PublishReadyToRun for all platforms since we're restoring with this property
-          dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r $RID -o ./publish
+          # Note: PublishTrimmed=true is compatible but produces many warnings due to Avalonia UI's use of reflection
+          # If smaller app size is needed, it can be added back with: -p:PublishTrimmed=true
+          dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -r $RID -o ./publish
         shell: bash
 
       - name: Extract version
