@@ -9,17 +9,26 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-        arch: [amd64, arm64]
         include:
           - os: windows-latest
             platform: windows
+            arch: amd64
+            artifact-extension: .zip
+          - os: windows-latest
+            platform: windows
+            arch: arm64
             artifact-extension: .zip
           - os: ubuntu-latest
             platform: linux
+            arch: amd64
+            artifact-extension: .tar.gz
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
             artifact-extension: .tar.gz
           - os: macos-latest
             platform: darwin
+            arch: arm64
             artifact-extension: '' # Empty, as we only use .app.zip for macOS
 
     runs-on: ${{ matrix.os }}
@@ -36,7 +45,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Set up QEMU for ARM64 emulation
-        if: matrix.arch == 'arm64'
+        if: matrix.arch == 'arm64' && matrix.os != 'macos-latest'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -192,7 +201,6 @@ jobs:
               - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_amd64.zip`
               - ARM 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_arm64.zip`
             - macOS:
-              - Intel 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_amd64.app.zip`
               - Apple Silicon: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_arm64.app.zip`
             - Linux:
               - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_amd64.tar.gz`
