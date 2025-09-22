@@ -16,8 +16,11 @@ This document outlines the steps to create and publish releases for ORAS Desktop
 2. Update version numbers in relevant files:
    - Update `Directory.Build.props` if version is defined there
    - Update any other files that contain version information
+3. Verify the project files have the necessary RuntimeIdentifiers:
+   - Ensure both project files include `<RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>`
+   - These are required for cross-platform builds on GitHub Actions
 
-3. Verify the application builds and runs correctly:
+4. Verify the application builds and runs correctly:
 
 ```powershell
 dotnet restore
