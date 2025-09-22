@@ -43,7 +43,17 @@ jobs:
         run: dotnet build OrasProject.OrasDesktop.sln --configuration Release --no-restore
 
       - name: Publish
-        run: dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r ${{ matrix.platform }}-${{ matrix.arch == 'amd64' && 'x64' || matrix.arch }} -o ./publish
+        run: |
+          RID=""
+          if [ "${{ matrix.platform }}" == "windows" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
+            RID="win-x64"
+          elif [ "${{ matrix.platform }}" == "linux" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
+            RID="linux-x64"
+          elif [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            RID="osx-arm64"
+          fi
+          dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r $RID -o ./publish
+        shell: bash
 
       - name: Extract version
         id: extract_version
