@@ -9,18 +9,19 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-        arch: [amd64, arm64]
         include:
           - os: windows-latest
             platform: windows
+            arch: amd64
             artifact-extension: .zip
           - os: ubuntu-latest
             platform: linux
+            arch: amd64
             artifact-extension: .tar.gz
           - os: macos-latest
             platform: darwin
-            artifact-extension: '' # Empty, as we only use .app.zip for macOS
+            arch: arm64
+            artifact-extension: '' # We use .app.zip for macOS
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -35,12 +36,6 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Set up QEMU for ARM64 emulation
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Restore dependencies
         run: dotnet restore OrasProject.OrasDesktop.sln
 
@@ -48,7 +43,17 @@ jobs:
         run: dotnet build OrasProject.OrasDesktop.sln --configuration Release --no-restore
 
       - name: Publish
-        run: dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r ${{ matrix.platform }}-${{ matrix.arch == 'amd64' && 'x64' || matrix.arch }} -o ./publish
+        run: |
+          RID=""
+          if [ "${{ matrix.platform }}" == "windows" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
+            RID="win-x64"
+          elif [ "${{ matrix.platform }}" == "linux" ] && [ "${{ matrix.arch }}" == "amd64" ]; then
+            RID="linux-x64"
+          elif [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            RID="osx-arm64"
+          fi
+          dotnet publish OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj --configuration Release --no-build --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true -r $RID -o ./publish
+        shell: bash
 
       - name: Extract version
         id: extract_version
@@ -132,10 +137,8 @@ jobs:
         with:
           name: oras-desktop_${{ steps.extract_version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}
           path: |
-            ${{ matrix.os != 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}{3}', steps.extract_version.outputs.version, matrix.platform, matrix.arch, matrix.artifact-extension) || '' }}
-            ${{ matrix.os != 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}{3}.sha256', steps.extract_version.outputs.version, matrix.platform, matrix.arch, matrix.artifact-extension) || '' }}
-            ${{ matrix.os == 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}.app.zip', steps.extract_version.outputs.version, matrix.platform, matrix.arch) || '' }}
-            ${{ matrix.os == 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}.app.zip.sha256', steps.extract_version.outputs.version, matrix.platform, matrix.arch) || '' }}
+            ${{ matrix.os == 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}.app.zip', steps.extract_version.outputs.version, matrix.platform, matrix.arch) || format('./oras-desktop_{0}_{1}_{2}{3}', steps.extract_version.outputs.version, matrix.platform, matrix.arch, matrix.artifact-extension) }}
+            ${{ matrix.os == 'macos-latest' && format('./oras-desktop_{0}_{1}_{2}.app.zip.sha256', steps.extract_version.outputs.version, matrix.platform, matrix.arch) || format('./oras-desktop_{0}_{1}_{2}{3}.sha256', steps.extract_version.outputs.version, matrix.platform, matrix.arch, matrix.artifact-extension) }}
 
   release:
     needs: build
@@ -186,17 +189,11 @@ jobs:
             
             ### Installation
             
-            Download the appropriate binary for your platform and architecture:
+            Download the appropriate binary for your platform:
             
-            - Windows:
-              - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_amd64.zip`
-              - ARM 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_arm64.zip`
-            - macOS:
-              - Intel 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_amd64.app.zip`
-              - Apple Silicon: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_arm64.app.zip`
-            - Linux:
-              - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_amd64.tar.gz`
-              - ARM 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_arm64.tar.gz`
+            - Windows: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_amd64.zip`
+            - macOS: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_arm64.app.zip`
+            - Linux: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_amd64.tar.gz`
             
             #### macOS Installation
             1. Download the `.app.zip` file

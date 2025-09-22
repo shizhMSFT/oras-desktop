@@ -43,9 +43,9 @@ git push origin v1.0.0
 Once the tag is pushed, the GitHub Actions workflow (`release-github.yml`) will automatically:
 
 1. Build the application for multiple platforms:
-   - Windows (Intel/AMD 64-bit and ARM 64-bit)
-   - macOS (Intel 64-bit and Apple Silicon)
-   - Linux (Intel/AMD 64-bit and ARM 64-bit)
+   - Windows (Intel/AMD 64-bit)
+   - macOS (Apple Silicon)
+   - Linux (Intel/AMD 64-bit)
 
 2. Package the application appropriately for each platform:
    - Windows: ZIP archives containing the application
@@ -70,15 +70,12 @@ The following artifacts will be created for each release:
 
 - Windows:
   - `oras-desktop_VERSION_windows_amd64.zip` - Intel/AMD 64-bit version
-  - `oras-desktop_VERSION_windows_arm64.zip` - ARM 64-bit version
 
 - macOS:
-  - `oras-desktop_VERSION_darwin_amd64.app.zip` - Intel 64-bit version
   - `oras-desktop_VERSION_darwin_arm64.app.zip` - Apple Silicon version
 
 - Linux:
   - `oras-desktop_VERSION_linux_amd64.tar.gz` - Intel/AMD 64-bit version
-  - `oras-desktop_VERSION_linux_arm64.tar.gz` - ARM 64-bit version
 
 - Checksums:
   - `oras-desktop_VERSION_checksums.txt` - SHA256 checksums for all artifacts
@@ -93,7 +90,7 @@ The following artifacts will be created for each release:
 
 ### macOS
 
-1. Download the appropriate `.app.zip` file for your architecture
+1. Download the `.app.zip` file for Apple Silicon
 2. Extract the ZIP file
 3. Move `OrasDesktop.app` to your Applications folder
 4. Right-click on the app and select "Open" (required the first time to bypass Gatekeeper)
