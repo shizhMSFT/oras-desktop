@@ -251,6 +251,12 @@ namespace OrasProject.OrasDesktop.ViewModels
             get => _hasPlatformSizes;
             set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
         }
+        
+        public Manifest? CurrentManifest
+        {
+            get => _currentManifest;
+            private set => this.RaiseAndSetIfChanged(ref _currentManifest, value);
+        }
 
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
         public bool CanModifySelectedTag => _selectedTag != null;
@@ -519,18 +525,18 @@ namespace OrasProject.OrasDesktop.ViewModels
                     tag.Name,
                     default
                 );
-                _currentManifest = new Manifest
+                CurrentManifest = new Manifest
                 {
                     RawContent = manifest.Json,
                     Digest = manifest.Digest,
                     Tag = tag,
                     MediaType = manifest.MediaType,
                 };
-                ManifestContent = _currentManifest.RawContent;
+                ManifestContent = CurrentManifest.RawContent;
                 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(
-                    _currentManifest.RawContent,
+                    CurrentManifest.RawContent,
                     async (digest) => await LoadContentByDigestAsync(digest)
                 );
 
@@ -540,7 +546,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Kick off referrers load (fire and forget, separate status message)
                 ProgressValue = 0;
                 IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repoPath, _currentManifest.Digest);
+                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
 
                 StatusMessage = $"Loaded manifest for {tag.Name}";
             }
@@ -583,6 +589,12 @@ namespace OrasProject.OrasDesktop.ViewModels
                     digest,
                     default
                 );
+                CurrentManifest = new Manifest
+                {
+                    RawContent = manifest.Json,
+                    Digest = manifest.Digest,
+                    MediaType = manifest.MediaType,
+                };
                 ManifestContent = manifest.Json;
                 
                 // Create a highlighted and selectable text block
@@ -1199,7 +1211,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 }
 
                 // Create a new manifest object
-                _currentManifest = new Manifest
+                CurrentManifest = new Manifest
                 {
                     RawContent = manifest.Json,
                     Digest = manifest.Digest,
@@ -1207,11 +1219,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
                 
-                ManifestContent = _currentManifest.RawContent;
+                ManifestContent = CurrentManifest.RawContent;
                 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(
-                    _currentManifest.RawContent,
+                    CurrentManifest.RawContent,
                     async (digest) => await LoadContentByDigestAsync(digest)
                 );
                 
@@ -1221,7 +1233,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Load referrers
                 ProgressValue = 0;
                 IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repository, _currentManifest.Digest);
+                _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
                 
                 StatusMessage = $"Loaded manifest for {reference}";
             }
