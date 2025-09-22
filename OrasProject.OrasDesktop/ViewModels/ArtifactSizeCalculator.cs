@@ -152,7 +152,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 result.Add(new PlatformImageSize 
                                 { 
                                     Platform = platform, 
-                                    SizeInBytes = size 
+                                    SizeInBytes = size,
+                                    Digest = digest
                                 });
                             }
                             catch (Exception)
@@ -161,7 +162,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 result.Add(new PlatformImageSize 
                                 { 
                                     Platform = platform + " (error)", 
-                                    SizeInBytes = 0 
+                                    SizeInBytes = 0,
+                                    Digest = digest
                                 });
                             }
                         }

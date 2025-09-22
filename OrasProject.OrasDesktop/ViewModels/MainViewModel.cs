@@ -52,6 +52,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
+        public ReactiveCommand<PlatformImageSize, Unit> ViewPlatformManifestCommand { get; }
 
         public MainViewModel()
         {
@@ -66,6 +67,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             CopyManifestCommand = ReactiveCommand.CreateFromTask(CopyManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
             LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
+            ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
 
             // Setup property change handlers
             this.WhenAnyValue(x => x.SelectedRepository)
@@ -1173,6 +1175,77 @@ namespace OrasProject.OrasDesktop.ViewModels
                 StatusMessage = $"Error processing reference: {ex.Message}";
                 ManifestContent = string.Empty;
                 ManifestViewer = null;
+            }
+            finally
+            {
+                IsBusy = false;
+                // Reset progress indicators for manifest loading
+                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                {
+                    IsProgressIndeterminate = false;
+                    ProgressValue = 0;
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Loads and displays the manifest for a specific platform
+        /// </summary>
+        private async Task ViewPlatformManifestAsync(PlatformImageSize platformSize)
+        {
+            if (string.IsNullOrEmpty(platformSize.Digest) || SelectedRepository == null)
+            {
+                StatusMessage = "Platform digest not available";
+                return;
+            }
+
+            IsBusy = true;
+            StatusMessage = $"Loading manifest for platform {platformSize.Platform}...";
+
+            try
+            {
+                var repoPath = SelectedRepository.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                
+                // Get the manifest for this specific platform
+                var manifest = await _registryService.GetManifestByDigestAsync(
+                    repoPath,
+                    platformSize.Digest,
+                    default
+                );
+                
+                // Update the current manifest
+                CurrentManifest = new Manifest
+                {
+                    RawContent = manifest.Json,
+                    Digest = manifest.Digest,
+                    Tag = SelectedTag,
+                    MediaType = manifest.MediaType,
+                };
+                
+                ManifestContent = CurrentManifest.RawContent;
+                
+                // Create a highlighted and selectable text block
+                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
+                
+                // Update the selected tag reference to include the platform
+                if (SelectedTag != null)
+                {
+                    SelectedTagReference = $"{SelectedTag.FullReference} ({platformSize.Platform})";
+                }
+
+                // Kick off referrers load (fire and forget, separate status message)
+                ProgressValue = 0;
+                IsProgressIndeterminate = false;
+                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
+
+                StatusMessage = $"Loaded manifest for platform {platformSize.Platform}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading platform manifest: {ex.Message}";
             }
             finally
             {
