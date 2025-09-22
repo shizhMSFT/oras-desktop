@@ -155,14 +155,19 @@ jobs:
         run: find ./artifacts -type f | sort
         shell: bash
 
+      - name: Extract version from ref
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Create combined checksums file
         run: |
-          echo "# SHA256 checksums for ORAS Desktop ${{ github.ref_name }}" > oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
-          echo "# Generated on $(date -u)" >> oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
-          echo "" >> oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
-          find ./artifacts -name "*.sha256" -type f | sort | xargs cat >> oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
+          echo "# SHA256 checksums for ORAS Desktop ${{ github.ref_name }}" > oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
+          echo "# Generated on $(date -u)" >> oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
+          echo "" >> oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
+          find ./artifacts -name "*.sha256" -type f | sort | xargs cat >> oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
           echo "Combined checksums file:"
-          cat oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
+          cat oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
         shell: bash
 
       - name: Create Release
@@ -173,7 +178,7 @@ jobs:
           files: |
             ./artifacts/**/*.zip
             ./artifacts/**/*.tar.gz
-            ./oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
+            ./oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
           body: |
             ## ORAS Desktop ${{ github.ref_name }}
             
@@ -184,14 +189,14 @@ jobs:
             Download the appropriate binary for your platform and architecture:
             
             - Windows:
-              - Intel/AMD 64-bit: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_windows_amd64.zip`
-              - ARM 64-bit: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_windows_arm64.zip`
+              - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_amd64.zip`
+              - ARM 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_windows_arm64.zip`
             - macOS:
-              - Intel 64-bit: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_darwin_amd64.app.zip`
-              - Apple Silicon: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_darwin_arm64.app.zip`
+              - Intel 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_amd64.app.zip`
+              - Apple Silicon: `oras-desktop_${{ steps.version.outputs.VERSION }}_darwin_arm64.app.zip`
             - Linux:
-              - Intel/AMD 64-bit: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_linux_amd64.tar.gz`
-              - ARM 64-bit: `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_linux_arm64.tar.gz`
+              - Intel/AMD 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_amd64.tar.gz`
+              - ARM 64-bit: `oras-desktop_${{ steps.version.outputs.VERSION }}_linux_arm64.tar.gz`
             
             #### macOS Installation
             1. Download the `.app.zip` file
@@ -201,14 +206,14 @@ jobs:
             
             ### Checksums
             
-            SHA256 checksums are provided in the `oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt` file for verification.
+            SHA256 checksums are provided in the `oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt` file for verification.
             
             ```
             # Verify on Linux/macOS:
-            sha256sum -c oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt
+            sha256sum -c oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
             
             # Verify on Windows (PowerShell):
-            Get-Content oras-desktop_${{ github.ref_name && startsWith(github.ref_name, 'v') && github.ref_name.substring(1) || github.ref_name }}_checksums.txt | Select-String -Pattern "^([0-9a-f]+)\s+(.+)$" | ForEach-Object { 
+            Get-Content oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt | Select-String -Pattern "^([0-9a-f]+)\s+(.+)$" | ForEach-Object { 
               $hash = $_.Matches.Groups[1].Value; 
               $file = $_.Matches.Groups[2].Value; 
               if ((Get-FileHash -Algorithm SHA256 $file).Hash.ToLower() -eq $hash) {
