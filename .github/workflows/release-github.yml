@@ -107,6 +107,10 @@ jobs:
           # Move all remaining files to the MacOS directory
           find ./publish -type f -not -path "*/OrasProject.OrasDesktop.Desktop" -exec cp {} "./OrasDesktop.app/Contents/MacOS/" \;
           
+          # Ad-hoc code sign the app bundle
+          /usr/bin/codesign --force --options runtime --sign "-" "./OrasDesktop.app" --deep
+          /usr/bin/codesign --verify --verbose "./OrasDesktop.app"
+          
           # Create a zip archive containing the .app bundle
           ditto -c -k --keepParent "./OrasDesktop.app" "./oras-desktop_${{ steps.extract_version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.app.zip"
         shell: bash
