@@ -212,11 +212,13 @@ jobs:
             
             SHA256 checksums are provided in the `oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt` file for verification.
             
+            Verify on Linux/macOS:
             ```
-            # Verify on Linux/macOS:
             sha256sum -c oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt
+            ```
             
-            # Verify on Windows (PowerShell):
+            Verify on Windows (PowerShell):
+            ```powershell
             Get-Content oras-desktop_${{ steps.version.outputs.VERSION }}_checksums.txt | Select-String -Pattern "^([0-9a-f]+)\s+(.+)$" | ForEach-Object { 
               $hash = $_.Matches.Groups[1].Value; 
               $file = $_.Matches.Groups[2].Value; 
