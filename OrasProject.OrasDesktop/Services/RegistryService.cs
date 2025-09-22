@@ -33,67 +33,122 @@ public sealed class RegistryService : IRegistryService
 
     public Task InitializeAsync(RegistryConnection connection, CancellationToken ct)
     {
-        _connection = connection;
-        _httpClient = new HttpClient();
+        try
+        {
+            _connection = connection;
+            _httpClient = new HttpClient();
 
-        // Build credential based on auth type.
-        var credential = new Credential();
-        switch (connection.AuthType)
-        {
-            case AuthType.Basic:
-                credential.Username = connection.Username;
-                credential.Password = connection.Password; // oras client will negotiate bearer if needed
-                break;
-            case AuthType.Bearer:
-                // Library examples use RefreshToken for token-style auth.
-                credential.RefreshToken = connection.BearerToken;
-                break;
-            case AuthType.Anonymous:
-            default:
-                break; // leave empty for anonymous
-        }
+            // Build credential based on auth type.
+            var credential = new Credential();
+            switch (connection.AuthType)
+            {
+                case AuthType.Basic:
+                    credential.Username = connection.Username;
+                    credential.Password = connection.Password; // oras client will negotiate bearer if needed
+                    break;
+                case AuthType.Bearer:
+                    // Library examples use RefreshToken for token-style auth.
+                    credential.RefreshToken = connection.BearerToken;
+                    break;
+                case AuthType.Anonymous:
+                default:
+                    break; // leave empty for anonymous
+            }
 
-        // Only supply credential provider when we actually have credentials; oras library throws if completely empty
-        if (connection.AuthType == AuthType.Anonymous)
-        {
-            _client = new Client(_httpClient);
+            // Only supply credential provider when we actually have credentials; oras library throws if completely empty
+            if (connection.AuthType == AuthType.Anonymous)
+            {
+                _client = new Client(_httpClient);
+            }
+            else
+            {
+                var credentialProvider = new SingleRegistryCredentialProvider(
+                    connection.Registry,
+                    credential
+                );
+                _client = new Client(_httpClient, credentialProvider);
+            }
+            _registry = new Registry(connection.Registry, _client);
+            return Task.CompletedTask;
         }
-        else
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
         {
-            var credentialProvider = new SingleRegistryCredentialProvider(
-                connection.Registry,
-                credential
-            );
-            _client = new Client(_httpClient, credentialProvider);
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Initialize registry connection"), respEx);
         }
-        _registry = new Registry(connection.Registry, _client);
-        return Task.CompletedTask;
+        catch (Exception ex)
+        {
+            throw new RegistryOperationException($"Failed to initialize registry connection: {ex.Message}", ex);
+        }
     }
 
     public async Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct)
     {
-        EnsureInitialized();
-        var results = new List<string>();
-        await foreach (var name in _registry!.ListRepositoriesAsync(null, ct))
+        try
         {
-            results.Add(name);
+            EnsureInitialized();
+            var results = new List<string>();
+            await foreach (var name in _registry!.ListRepositoriesAsync(null, ct))
+            {
+                results.Add(name);
+            }
+            return results;
         }
-        return results;
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "List repositories"), respEx);
+        }
+    }
+
+    private string GetUserFriendlyErrorMessage(OrasProject.Oras.Registry.Remote.ResponseException respEx, string operation)
+    {
+        string errorMessage = $"HTTP {respEx.StatusCode}";
+        
+        // Add specific error messages based on status code
+        switch (respEx.StatusCode)
+        {
+            case System.Net.HttpStatusCode.Unauthorized:
+                errorMessage = "Unauthorized: Authentication required or credentials invalid";
+                break;
+            case System.Net.HttpStatusCode.Forbidden:
+                errorMessage = "Forbidden: You don't have permission to perform this operation";
+                break;
+            case System.Net.HttpStatusCode.NotFound:
+                errorMessage = "Not Found: The requested resource does not exist or has been deleted";
+                break;
+            case System.Net.HttpStatusCode.MethodNotAllowed:
+                errorMessage = "Method Not Allowed: This operation is not supported by the registry";
+                break;
+            case (System.Net.HttpStatusCode)429:
+                errorMessage = "Too Many Requests: Please try again later";
+                break;
+            case System.Net.HttpStatusCode.InternalServerError:
+                errorMessage = "Internal Server Error: The registry encountered an error";
+                break;
+        }
+        
+        return $"{operation} failed: {errorMessage}";
     }
 
     public async Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct)
     {
-        EnsureInitialized();
-        var repo = await _registry!.GetRepositoryAsync(repository, ct);
-        var tags = new List<string>();
-        if (repo is not null)
+        try
         {
-            await foreach (var t in repo.ListTagsAsync(null, ct))
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            var tags = new List<string>();
+            if (repo is not null)
             {
-                tags.Add(t);
+                await foreach (var t in repo.ListTagsAsync(null, ct))
+                {
+                    tags.Add(t);
+                }
             }
+            return tags;
         }
-        return tags;
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "List tags"), respEx);
+        }
     }
 
     public async Task<ManifestResult> GetManifestByTagAsync(
@@ -102,17 +157,24 @@ public sealed class RegistryService : IRegistryService
         CancellationToken ct
     )
     {
-        EnsureInitialized();
-        var repo = await _registry!.GetRepositoryAsync(repository, ct);
-        var (descriptor, stream) = await repo.FetchAsync(tag, ct);
-        byte[] bytes;
-        using (stream)
+        try
         {
-            bytes = await stream.ReadAllAsync(descriptor, ct);
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            var (descriptor, stream) = await repo.FetchAsync(tag, ct);
+            byte[] bytes;
+            using (stream)
+            {
+                bytes = await stream.ReadAllAsync(descriptor, ct);
+            }
+            var json = SafePretty(bytes);
+            var digests = ExtractDigests(json);
+            return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
         }
-        var json = SafePretty(bytes);
-        var digests = ExtractDigests(json);
-        return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get manifest"), respEx);
+        }
     }
 
     public async Task<ManifestResult> GetManifestByDigestAsync(
@@ -121,17 +183,24 @@ public sealed class RegistryService : IRegistryService
         CancellationToken ct
     )
     {
-        EnsureInitialized();
-        var repo = await _registry!.GetRepositoryAsync(repository, ct);
-        var (descriptor, stream) = await repo.FetchAsync(digest, ct);
-        byte[] bytes;
-        using (stream)
+        try
         {
-            bytes = await stream.ReadAllAsync(descriptor, ct);
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            var (descriptor, stream) = await repo.FetchAsync(digest, ct);
+            byte[] bytes;
+            using (stream)
+            {
+                bytes = await stream.ReadAllAsync(descriptor, ct);
+            }
+            var json = SafePretty(bytes);
+            var digests = ExtractDigests(json);
+            return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
         }
-        var json = SafePretty(bytes);
-        var digests = ExtractDigests(json);
-        return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get manifest"), respEx);
+        }
     }
 
     public async Task DeleteManifestAsync(string repository, string digest, CancellationToken ct)
@@ -181,12 +250,19 @@ public sealed class RegistryService : IRegistryService
         CancellationToken ct
     )
     {
-        EnsureInitialized();
-        progress?.Report(new CopyProgress("Copying", 0, null));
-        var src = await _registry!.GetRepositoryAsync(request.SourceRepository, ct);
-        var dst = await _registry.GetRepositoryAsync(request.TargetRepository, ct);
-        await src.CopyAsync(request.Reference, dst, request.TargetTag ?? string.Empty, ct);
-        progress?.Report(new CopyProgress("Completed", 1, 1));
+        try
+        {
+            EnsureInitialized();
+            progress?.Report(new CopyProgress("Copying", 0, null));
+            var src = await _registry!.GetRepositoryAsync(request.SourceRepository, ct);
+            var dst = await _registry.GetRepositoryAsync(request.TargetRepository, ct);
+            await src.CopyAsync(request.Reference, dst, request.TargetTag ?? string.Empty, ct);
+            progress?.Report(new CopyProgress("Completed", 1, 1));
+        }
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Copy artifact"), respEx);
+        }
     }
 
     public async Task<IReadOnlyList<ReferrerNode>> GetReferrersRecursiveAsync(
@@ -196,44 +272,46 @@ public sealed class RegistryService : IRegistryService
         CancellationToken ct
     )
     {
-        EnsureInitialized();
-        var repo = await _registry!.GetRepositoryAsync(repository, ct);
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootDigest };
-        int count = 0;
-
-        async Task<List<ReferrerInfo>> FetchDirectAsync(string digest)
+        try
         {
-            var list = new List<ReferrerInfo>();
-            try
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootDigest };
+            int count = 0;
+
+            async Task<List<ReferrerInfo>> FetchDirectAsync(string digest)
             {
-                var desc = await repo.ResolveAsync(digest, ct);
-                if (repo is Repository concrete)
+                var list = new List<ReferrerInfo>();
+                try
                 {
-                    await foreach (var referrer in concrete.FetchReferrersAsync(desc, ct))
+                    var desc = await repo.ResolveAsync(digest, ct);
+                    if (repo is Repository concrete)
                     {
-                        string artifactType = string.Empty;
-                        try { artifactType = referrer.ArtifactType ?? string.Empty; } catch { }
-                        var annotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                        if (referrer.Annotations is not null)
+                        await foreach (var referrer in concrete.FetchReferrersAsync(desc, ct))
                         {
-                            foreach (var kv in referrer.Annotations)
-                                annotations[kv.Key] = kv.Value;
+                            string artifactType = string.Empty;
+                            try { artifactType = referrer.ArtifactType ?? string.Empty; } catch { }
+                            var annotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                            if (referrer.Annotations is not null)
+                            {
+                                foreach (var kv in referrer.Annotations)
+                                    annotations[kv.Key] = kv.Value;
+                            }
+                            list.Add(new ReferrerInfo(referrer.Digest, referrer.MediaType, artifactType, annotations));
+                            progress?.Report(++count);
                         }
-                        list.Add(new ReferrerInfo(referrer.Digest, referrer.MediaType, artifactType, annotations));
-                        progress?.Report(++count);
+                    }
+                    else
+                    {
+                        // Repository implementation doesn't expose referrers API; return empty.
                     }
                 }
-                else
+                catch
                 {
-                    // Repository implementation doesn't expose referrers API; return empty.
+                    // ignore errors; empty list returned
                 }
+                return list;
             }
-            catch
-            {
-                // ignore errors; empty list returned
-            }
-            return list;
-        }
 
         async Task<ReferrerNode> BuildNodeAsync(ReferrerInfo info)
         {
@@ -269,37 +347,40 @@ public sealed class RegistryService : IRegistryService
             return new ReferrerNode(info.Digest, info.Digest, false, info, children);
         }
 
-        async Task<List<ReferrerNode>> GroupAndBuildAsync(List<ReferrerInfo> infos)
-        {
-            var groups = infos
-                .GroupBy(i => string.IsNullOrWhiteSpace(i.ArtifactType) ? i.MediaType : i.ArtifactType)
-                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
-            var result = new List<ReferrerNode>();
-            foreach (var g in groups)
+            async Task<List<ReferrerNode>> GroupAndBuildAsync(List<ReferrerInfo> infos)
             {
-                var childNodes = new List<ReferrerNode>();
-                foreach (var info in g.OrderBy(i => i.Digest, StringComparer.OrdinalIgnoreCase))
+                var groups = infos
+                    .GroupBy(i => string.IsNullOrWhiteSpace(i.ArtifactType) ? i.MediaType : i.ArtifactType)
+                    .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+                var result = new List<ReferrerNode>();
+                foreach (var g in groups)
                 {
-                    childNodes.Add(await BuildNodeAsync(info));
+                    var childNodes = new List<ReferrerNode>();
+                    foreach (var info in g.OrderBy(i => i.Digest, StringComparer.OrdinalIgnoreCase))
+                    {
+                        childNodes.Add(await BuildNodeAsync(info));
+                    }
+                    result.Add(
+                        new ReferrerNode(
+                            g.Key,
+                            g.Key,
+                            true,
+                            null,
+                            childNodes
+                        )
+                    );
                 }
-                result.Add(
-                    new ReferrerNode(
-                        g.Key,
-                        g.Key,
-                        true,
-                        null,
-                        childNodes
-                    )
-                );
+                return result;
             }
-            return result;
+
+            var top = await FetchDirectAsync(rootDigest);
+            return await GroupAndBuildAsync(top);
         }
-
-        var top = await FetchDirectAsync(rootDigest);
-        return await GroupAndBuildAsync(top);
-    }
-
-    /// <summary>
+        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get referrers"), respEx);
+        }
+    }    /// <summary>
     /// Extract digests from a manifest JSON string.
     /// </summary>
     internal static IReadOnlyList<string> ExtractDigests(string json)
