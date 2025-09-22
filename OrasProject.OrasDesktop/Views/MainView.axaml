@@ -28,11 +28,11 @@
         Grid.Column="0"
         Orientation="Horizontal"
         Spacing="5">
-        <TextBlock VerticalAlignment="Center" Text="Registry URL:" />
+        <TextBlock VerticalAlignment="Center" Text="Registry:" />
         <TextBox
           Width="250"
           Text="{Binding RegistryUrl}"
-          Watermark="Enter registry URL (e.g., mcr.microsoft.com)" />
+          Watermark="Enter registry (e.g., mcr.microsoft.com)" />
         <Button Command="{Binding ConnectCommand}" Content="Connect" />
       </StackPanel>
       <StackPanel
