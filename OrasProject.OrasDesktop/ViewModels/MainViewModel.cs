@@ -49,7 +49,6 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
         public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
-        public ReactiveCommand<Unit, Unit> CopyManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
@@ -65,7 +64,6 @@ namespace OrasProject.OrasDesktop.ViewModels
             ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
-            CopyManifestCommand = ReactiveCommand.CreateFromTask(CopyManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
             LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
@@ -893,71 +891,6 @@ namespace OrasProject.OrasDesktop.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"Error deleting manifest: {ex.Message}";
-            }
-            finally
-            {
-                IsBusy = false;
-                // Reset progress indicators
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
-            }
-        }
-
-        private async Task CopyManifestAsync()
-        {
-            if (SelectedTag == null || SelectedRepository == null)
-            {
-                StatusMessage = "No tag or repository selected";
-                return;
-            }
-
-            var mainWindow = GetMainWindow();
-            if (mainWindow == null)
-            {
-                StatusMessage = "Failed to get main window";
-                return;
-            }
-
-            var result = await CopyManifestDialog.ShowDialog(mainWindow, SelectedTag.Name);
-            if (!result.Result)
-            {
-                return;
-            }
-
-            IsBusy = true;
-            StatusMessage =
-                $"Copying manifest for {SelectedTag.Name} to {result.DestinationTag}...";
-
-            try
-            {
-                var repoPath = SelectedRepository.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
-                    string.Empty
-                );
-                var progress = new Progress<CopyProgress>(p =>
-                {
-                    StatusMessage =
-                        p.Total <= 0 ? p.Stage : $"{p.Stage} {(p.Completed ?? 0)}/{p.Total}";
-                });
-                await _registryService.CopyAsync(
-                    new CopyRequest(repoPath, SelectedTag.Name, repoPath, result.DestinationTag),
-                    progress,
-                    default
-                );
-
-                // Refresh tags
-                await RefreshTagsAsync();
-
-                StatusMessage =
-                    $"Copied manifest for {SelectedTag.Name} to {result.DestinationTag}";
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                StatusMessage = regEx.Message;
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error copying manifest: {ex.Message}";
             }
             finally
             {
