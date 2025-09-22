@@ -32,13 +32,6 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _statusMessage = string.Empty;
         private bool _isBusy;
         private Registry _currentRegistry = new Registry();
-        private ObservableCollection<string> _authTypes = new ObservableCollection<string>
-        {
-            "None",
-            "Basic",
-            "Token",
-        };
-        private string _selectedAuthType = "None";
 
         private string _selectedTagReference = string.Empty;
         private string _manifestContent = string.Empty;
@@ -53,7 +46,6 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
-        public ReactiveCommand<Unit, Unit> LoginCommand { get; }
         public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyManifestCommand { get; }
@@ -66,7 +58,6 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
-            LoginCommand = ReactiveCommand.CreateFromTask(LoginToRegistryAsync);
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyManifestCommand = ReactiveCommand.CreateFromTask(CopyManifestAsync);
@@ -93,16 +84,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     await LoadManifestAsync(tag);
                 });
 
-            this.WhenAnyValue(x => x.SelectedAuthType)
-                .Subscribe(authType =>
-                {
-                    _currentRegistry.AuthenticationType = authType switch
-                    {
-                        "Basic" => AuthenticationType.Basic,
-                        "Token" => AuthenticationType.Token,
-                        _ => AuthenticationType.None,
-                    };
-                });
+            // Auth type observer removed as the UI component was removed
         }
 
         // Property accessors
@@ -253,18 +235,6 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
         }
 
-        public ObservableCollection<string> AuthTypes
-        {
-            get => _authTypes;
-            set => this.RaiseAndSetIfChanged(ref _authTypes, value);
-        }
-
-        public string SelectedAuthType
-        {
-            get => _selectedAuthType;
-            set => this.RaiseAndSetIfChanged(ref _selectedAuthType, value);
-        }
-
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
         public bool CanModifySelectedTag => _selectedTag != null;
 
@@ -291,45 +261,92 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 _currentRegistry.Url = RegistryUrl;
 
-                // Initialize new oras service (anonymous for now) in parallel with legacy connect until migration completes
+                // Initialize with anonymous auth first
+                _currentRegistry.AuthenticationType = AuthenticationType.None;
+                _currentRegistry.Username = string.Empty;
+                _currentRegistry.Password = string.Empty;
+                _currentRegistry.Token = string.Empty;
+
                 await _registryService.InitializeAsync(
                     new RegistryConnection(
                         _currentRegistry.Url,
                         _currentRegistry.IsSecure,
-                        _currentRegistry.AuthenticationType switch
-                        {
-                            AuthenticationType.Basic => AuthType.Basic,
-                            AuthenticationType.Token => AuthType.Bearer,
-                            _ => AuthType.Anonymous,
-                        },
-                        _currentRegistry.Username,
-                        _currentRegistry.Password,
-                        _currentRegistry.Token
+                        AuthType.Anonymous
                     ),
                     default
                 );
 
-                // Ping /v2/ manually to validate connectivity (basic anonymous check)
-                var repos = await _registryService.ListRepositoriesAsync(default);
-                var connected = repos.Count >= 0; // if call returns without exception treat as connected
-                if (!connected)
+                try
                 {
-                    StatusMessage = "Failed to connect to registry";
-                    return;
+                    // Try to connect anonymously first
+                    var repos = await _registryService.ListRepositoriesAsync(default);
+                    var connected = repos.Count >= 0; // if call returns without exception treat as connected
+                    
+                    if (connected)
+                    {
+                        // Anonymous connection successful, load repositories
+                        var repositories = await BuildRepositoryTreeAsync();
+                        Repositories.Clear();
+                        foreach (var repo in repositories)
+                        {
+                            Repositories.Add(repo);
+                        }
+                        ApplyRepositoryFilter();
+                        StatusMessage = "Connected to registry (anonymous)";
+                    }
                 }
-
-                // Get repositories (already sorted at all levels)
-                var repositories = await BuildRepositoryTreeAsync();
-
-                Repositories.Clear();
-                foreach (var repo in repositories)
+                catch (Exception)
                 {
-                    Repositories.Add(repo);
+                    // Anonymous connection failed, prompt for authentication
+                    var mainWindow = GetMainWindow();
+                    if (mainWindow == null)
+                    {
+                        StatusMessage = "Failed to get main window";
+                        return;
+                    }
+
+                    var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
+                    if (!result.Result)
+                    {
+                        StatusMessage = "Authentication cancelled";
+                        return;
+                    }
+
+                    // Update registry with authentication information
+                    _currentRegistry.AuthenticationType = result.AuthType;
+                    _currentRegistry.Username = result.Username;
+                    _currentRegistry.Password = result.Password;
+                    _currentRegistry.Token = result.Token;
+
+                    // Reinitialize with supplied credentials
+                    await _registryService.InitializeAsync(
+                        new RegistryConnection(
+                            _currentRegistry.Url,
+                            _currentRegistry.IsSecure,
+                            _currentRegistry.AuthenticationType switch
+                            {
+                                AuthenticationType.Basic => AuthType.Basic,
+                                AuthenticationType.Token => AuthType.Bearer,
+                                _ => AuthType.Anonymous,
+                            },
+                            _currentRegistry.Username,
+                            _currentRegistry.Password,
+                            _currentRegistry.Token
+                        ),
+                        default
+                    );
+
+                    // Get repositories with authentication
+                    var repos = await _registryService.ListRepositoriesAsync(default);
+                    var repositories = await BuildRepositoryTreeAsync();
+                    Repositories.Clear();
+                    foreach (var repo in repositories)
+                    {
+                        Repositories.Add(repo);
+                    }
+                    ApplyRepositoryFilter();
+                    StatusMessage = "Connected to registry (authenticated)";
                 }
-
-                ApplyRepositoryFilter();
-
-                StatusMessage = "Connected to registry";
             }
             catch (Exception ex)
             {
@@ -341,69 +358,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
-        private async Task LoginToRegistryAsync()
-        {
-            var mainWindow = GetMainWindow();
-            if (mainWindow == null)
-            {
-                StatusMessage = "Failed to get main window";
-                return;
-            }
-
-            try
-            {
-                var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
-                if (!result.Result)
-                {
-                    return;
-                }
-
-                IsBusy = true;
-                StatusMessage = "Authenticating with registry...";
-
-                // Update registry with authentication information
-                _currentRegistry.AuthenticationType = result.AuthType;
-                _currentRegistry.Username = result.Username;
-                _currentRegistry.Password = result.Password;
-                _currentRegistry.Token = result.Token;
-
-                // Reinitialize with supplied credentials
-                await _registryService.InitializeAsync(
-                    new RegistryConnection(
-                        _currentRegistry.Url,
-                        _currentRegistry.IsSecure,
-                        _currentRegistry.AuthenticationType switch
-                        {
-                            AuthenticationType.Basic => AuthType.Basic,
-                            AuthenticationType.Token => AuthType.Bearer,
-                            _ => AuthType.Anonymous,
-                        },
-                        _currentRegistry.Username,
-                        _currentRegistry.Password,
-                        _currentRegistry.Token
-                    ),
-                    default
-                );
-
-                StatusMessage = "Authenticated with registry";
-
-                // Update the authentication type in the UI
-                SelectedAuthType = result.AuthType switch
-                {
-                    AuthenticationType.Basic => "Basic",
-                    AuthenticationType.Token => "Token",
-                    _ => "None",
-                };
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error authenticating with registry: {ex.Message}";
-            }
-            finally
-            {
-                IsBusy = false;
-            }
-        }
+        // LoginToRegistryAsync method removed as functionality merged into ConnectToRegistryAsync
 
         private async Task LoadTagsAsync(Repository repository)
         {
