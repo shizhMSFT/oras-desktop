@@ -723,12 +723,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                 return;
             }
 
+            // Calculate the full reference for the manifest
+            string manifestRepoPath = SelectedTag.Repository!.FullPath.Replace(
+                $"{_currentRegistry.Url}/",
+                string.Empty
+            );
+            string fullReference = $"{_currentRegistry.Url}/{manifestRepoPath}:{SelectedTag.Name}";
+
             // Confirm deletion
             var messageBox = new Window
             {
                 Title = "Confirm Deletion",
-                Width = 350,
-                Height = 150,
+                Width = 400, // Increased width to accommodate longer text
+                Height = 170, // Increased height to accommodate the warning text
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 CanResize = false,
                 SizeToContent = SizeToContent.Height,
@@ -741,7 +748,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         new TextBlock
                         {
                             Text =
-                                $"Are you sure you want to delete the manifest for {SelectedTag.Name}?",
+                                $"Are you sure you want to delete the manifest `{fullReference}`?\nThis action cannot be undone.",
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                             [Grid.RowProperty] = 0,
                         },
@@ -759,6 +766,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     Width = 80,
                                     [Grid.ColumnProperty] = 0,
                                     Tag = false,
+                                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                                 },
                                 new Button
                                 {
@@ -769,6 +777,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     Classes = { "Danger" },
                                     Background = new SolidColorBrush(Color.Parse("#d9534f")),
                                     Foreground = Brushes.White,
+                                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                                 },
                             },
                         },
