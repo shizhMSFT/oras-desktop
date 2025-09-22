@@ -136,6 +136,18 @@ Get-Content oras-desktop_VERSION_checksums.txt | Select-String -Pattern "^([0-9a
 }
 ```
 
+## Build Configuration Notes
+
+### Build Optimization Parameters
+
+The release workflow uses build optimization parameters for all platforms:
+
+- All platforms: Uses `-p:PublishReadyToRun=true` for better startup performance
+- All platforms: Uses `-p:PublishSingleFile=true` for a single executable output
+- All platforms: Uses `-p:PublishTrimmed=true` for smaller deployment size
+
+The `dotnet restore` command includes the `-p:PublishReadyToRun=true` flag to ensure the necessary runtime packages are available during the build process for all platforms.
+
 ## Troubleshooting
 
 If you encounter any issues during the release process:
@@ -144,3 +156,4 @@ If you encounter any issues during the release process:
 2. Ensure all necessary permissions are in place
 3. Verify that the tag follows the expected format (starts with `v`)
 4. Check if there are any network or GitHub API rate limit issues
+5. For build errors related to ReadyToRun, ensure packages are restored with `-p:PublishReadyToRun=true` flag
