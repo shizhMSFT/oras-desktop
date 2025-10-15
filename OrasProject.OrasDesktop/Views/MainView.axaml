@@ -30,9 +30,16 @@
         Spacing="5">
         <TextBlock VerticalAlignment="Center" Text="Registry:" />
         <TextBox
+          Name="RegistryTextBox"
           Width="250"
           Text="{Binding RegistryUrl}"
-          Watermark="Enter registry (e.g., mcr.microsoft.com)" />
+          Watermark="Enter registry (e.g., mcr.microsoft.com)"
+          ToolTip.Tip="Press Enter to connect, or Shift+Enter to force login">
+          <TextBox.KeyBindings>
+            <KeyBinding Command="{Binding ConnectCommand}" Gesture="Enter" />
+            <KeyBinding Command="{Binding ForceLoginCommand}" Gesture="Shift+Enter" CommandParameter="True" />
+          </TextBox.KeyBindings>
+        </TextBox>
         <Button Name="ConnectButton" Command="{Binding ConnectCommand}" Content="Connect" ToolTip.Tip="Click to connect anonymously, or hold Shift to force login" />
       </StackPanel>
     </Grid>
@@ -129,21 +136,21 @@
           </Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
             <TextBlock FontWeight="Bold" Text="Platform Image Sizes" VerticalAlignment="Center"/>
-            <TextBlock Text="—" VerticalAlignment="Center" Foreground="Gray"/>
-            <TextBlock Text="{Binding ArtifactSizeSummary}" VerticalAlignment="Center" FontStyle="Italic" Foreground="Gray"/>
+            <TextBlock Text="—" VerticalAlignment="Center" Opacity="0.6"/>
+            <TextBlock Text="{Binding ArtifactSizeSummary}" VerticalAlignment="Center" FontStyle="Italic" Opacity="0.6"/>
           </StackPanel>
           <Border
             Grid.Row="1"
-            BorderBrush="LightGray"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
             BorderThickness="1"
             CornerRadius="3"
             MinHeight="60"
-            Background="#F8F8F8">
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
             <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto" Margin="0">
               <ItemsControl ItemsSource="{Binding PlatformImageSizes}" Margin="4">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Border Margin="0,2" Padding="6,4" BorderBrush="LightGray" BorderThickness="0,0,0,1">
+                    <Border Margin="0,2" Padding="6,4" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1">
                       <Grid ColumnDefinitions="Auto,*,Auto">
                         <Button Grid.Column="0" Padding="4,2" Background="Transparent" 
                                 BorderThickness="0" Cursor="Hand"
@@ -153,12 +160,12 @@
                                 ToolTip.Tip="Click to view platform-specific manifest">
                           <TextBlock Text="{Binding Platform}" FontFamily="Consolas" 
                                     FontWeight="SemiBold" VerticalAlignment="Center"
-                                    Foreground="#0066cc"/>
+                                    Foreground="{DynamicResource SystemAccentColor}"/>
                         </Button>
                         <ProgressBar Grid.Column="1" Margin="12,0" Height="8" Minimum="0" Maximum="100" 
-                                    Value="{Binding RelativePercentage}" Background="Transparent" Foreground="#99ccff"/>
+                                    Value="{Binding RelativePercentage}" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}" Foreground="{DynamicResource SystemAccentColor}"/>
                         <TextBlock Grid.Column="2" Text="{Binding HumanReadableSize}" 
-                                  Foreground="#505050" VerticalAlignment="Center"/>
+                                  Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" VerticalAlignment="Center"/>
                       </Grid>
                     </Border>
                   </DataTemplate>
@@ -260,8 +267,12 @@
           FontSize="13"
           Watermark="Enter registry/repository:tag or @digest..."
           Text="{Binding SelectedTagReference}"
-          KeyDown="ReferenceTextBox_KeyDown"
-          Name="ReferenceTextBox" />
+          ToolTip.Tip="Press Enter to load manifest details"
+          Name="ReferenceTextBox">
+          <TextBox.KeyBindings>
+            <KeyBinding Command="{Binding LoadManifestByReferenceCommand}" Gesture="Enter" />
+          </TextBox.KeyBindings>
+        </TextBox>
         
         <!-- Search Button -->
         <Button
