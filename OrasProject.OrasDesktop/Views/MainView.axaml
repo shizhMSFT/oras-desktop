@@ -301,25 +301,29 @@
     </Border>
 
     <!--  Status bar  -->
-    <Grid
+    <Border
       Grid.Row="3"
       Height="30"
-      Background="#f0f0f0"
-      ColumnDefinitions="*,Auto">
-      <TextBlock
-        Grid.Column="0"
-        Margin="10,0,0,0"
-        VerticalAlignment="Center"
-        Text="{Binding StatusMessage}" />
-      <!-- Combined progress bar that handles both modes -->
-      <ProgressBar
-        Grid.Column="1"
-        Width="100"
-        Height="15"
-        Margin="0,0,10,0"
-        Value="{Binding ProgressValue}"
-        Maximum="100"
-        IsIndeterminate="{Binding IsProgressIndeterminate}" />
-    </Grid>
+      Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+      BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock
+          Grid.Column="0"
+          Margin="10,0,0,0"
+          VerticalAlignment="Center"
+          Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+          Text="{Binding StatusMessage}" />
+        <!-- Combined progress bar that handles both modes -->
+        <ProgressBar
+          Grid.Column="1"
+          Width="100"
+          Height="15"
+          Margin="0,0,10,0"
+          Value="{Binding ProgressValue}"
+          Maximum="100"
+          IsIndeterminate="{Binding IsProgressIndeterminate}" />
+      </Grid>
+    </Border>
   </Grid>
 </UserControl>
