@@ -54,10 +54,10 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
         public ReactiveCommand<PlatformImageSize, Unit> ViewPlatformManifestCommand { get; }
 
-        public MainViewModel()
+        public MainViewModel(IRegistryService registryService, JsonHighlightService jsonHighlightService)
         {
-            _registryService = new RegistryService();
-            _jsonHighlightService = new JsonHighlightService();
+            _registryService = registryService;
+            _jsonHighlightService = jsonHighlightService;
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);

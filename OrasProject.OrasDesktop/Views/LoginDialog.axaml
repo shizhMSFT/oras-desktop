@@ -40,8 +40,8 @@
     </Grid>
     
     <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-      <Button x:Name="CancelButton" Content="Cancel" Width="80" />
-      <Button x:Name="LoginButton" Content="Login" Width="80" />
+      <Button x:Name="CancelButton" Content="Cancel" Width="80" IsCancel="True" />
+      <Button x:Name="LoginButton" Content="Login" Width="80" IsDefault="True" />
     </StackPanel>
   </Grid>
 </UserControl>

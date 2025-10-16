@@ -31,6 +31,7 @@ public partial class MainView : UserControl
             // Override the default click behavior
             connectButton.Click += ConnectButton_Click;
         }
+        
     }
     
     private void OnKeyDown(object? sender, KeyEventArgs e)
@@ -68,13 +69,4 @@ public partial class MainView : UserControl
         }
     }
     
-    private void ReferenceTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && DataContext is MainViewModel viewModel)
-        {
-            // Execute the command to load the manifest by reference
-            viewModel.LoadManifestByReferenceCommand.Execute();
-            e.Handled = true;
-        }
-    }
 }
