@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 
 namespace OrasProject.OrasDesktop.Models
 {
     /// <summary>
     /// Represents a repository in an OCI registry
     /// </summary>
-    public class Repository : IComparable<Repository>
+    public class Repository : IComparable<Repository>, INotifyPropertyChanged
     {
         /// <summary>
         /// Gets or sets the name of the repository
@@ -43,6 +44,24 @@ namespace OrasProject.OrasDesktop.Models
         /// </summary>
         public Registry? Registry { get; set; }
 
+        private bool _isExpanded;
+
+        /// <summary>
+        /// Gets or sets whether this repository node is expanded in the tree view.
+        /// </summary>
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set
+            {
+                if (_isExpanded != value)
+                {
+                    _isExpanded = value;
+                    OnPropertyChanged(nameof(IsExpanded));
+                }
+            }
+        }
+
         /// <summary>
         /// Compares this repository with another repository for ordering.
         /// </summary>
@@ -61,5 +80,10 @@ namespace OrasProject.OrasDesktop.Models
                 
             return string.Compare(Name, other.Name, StringComparison.OrdinalIgnoreCase);
         }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged(string propertyName) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

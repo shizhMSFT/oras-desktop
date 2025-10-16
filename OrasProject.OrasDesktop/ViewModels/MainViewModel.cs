@@ -47,7 +47,8 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
-        public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
+    public ReactiveCommand<Unit, Unit> RefreshRepositoriesCommand { get; }
+    public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
@@ -62,6 +63,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
             ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
+            RefreshRepositoriesCommand = ReactiveCommand.CreateFromTask(RefreshRepositoriesAsync);
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
@@ -114,7 +116,15 @@ namespace OrasProject.OrasDesktop.ViewModels
         public Repository? SelectedRepository
         {
             get => _selectedRepository;
-            set => this.RaiseAndSetIfChanged(ref _selectedRepository, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedRepository, value);
+
+                if (value != null)
+                {
+                    ExpandRepositoryAncestors(value);
+                }
+            }
         }
 
         public ObservableCollection<Tag> Tags
@@ -575,6 +585,92 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 IsBusy = false;
                 // Reset progress indicators
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
+            }
+        }
+
+        private async Task RefreshRepositoriesAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Refreshing repositories...";
+
+            try
+            {
+                var previousRepositoryPath = SelectedRepository?.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                var previousSelectedTag = SelectedTag;
+
+                var repositories = await BuildRepositoryTreeAsync();
+
+                Repositories.Clear();
+                foreach (var repo in repositories)
+                {
+                    Repositories.Add(repo);
+                }
+
+                ApplyRepositoryFilter();
+
+                if (!string.IsNullOrEmpty(previousRepositoryPath))
+                {
+                    FindAndSelectRepository(previousRepositoryPath);
+
+                    var currentPath = SelectedRepository?.FullPath.Replace(
+                        $"{_currentRegistry.Url}/",
+                        string.Empty
+                    );
+
+                    if (string.Equals(currentPath, previousRepositoryPath, StringComparison.OrdinalIgnoreCase) && SelectedRepository != null)
+                    {
+                        if (previousSelectedTag != null)
+                        {
+                            await LoadTagsAsync(SelectedRepository);
+                            var tagToSelect = Tags.FirstOrDefault(t => t.Name == previousSelectedTag.Name);
+                            if (tagToSelect != null)
+                            {
+                                SelectedTag = tagToSelect;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Tags.Clear();
+                        SelectedTag = null;
+                        SelectedRepository = null;
+                        CurrentManifest = null;
+                        ManifestViewer = null;
+                        ArtifactSizeSummary = string.Empty;
+                        PlatformImageSizes.Clear();
+                        HasPlatformSizes = false;
+                    }
+                }
+                else
+                {
+                    Tags.Clear();
+                    SelectedTag = null;
+                    SelectedRepository = null;
+                    CurrentManifest = null;
+                    ManifestViewer = null;
+                    ArtifactSizeSummary = string.Empty;
+                    PlatformImageSizes.Clear();
+                    HasPlatformSizes = false;
+                }
+
+                StatusMessage = "Repositories refreshed";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error refreshing repositories: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
                 IsProgressIndeterminate = false;
                 ProgressValue = 0;
             }
@@ -1420,6 +1516,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 FullPath = source.FullPath,
                 Registry = source.Registry,
                 IsLeaf = source.IsLeaf,
+                IsExpanded = source.IsExpanded,
             };
             foreach (var c in prunedChildren)
             {
@@ -1481,6 +1578,16 @@ namespace OrasProject.OrasDesktop.ViewModels
             if (found != null)
             {
                 SelectedRepository = found;
+            }
+        }
+
+        private void ExpandRepositoryAncestors(Repository repository)
+        {
+            var current = repository;
+            while (current != null)
+            {
+                current.IsExpanded = true;
+                current = current.Parent;
             }
         }
         
