@@ -48,7 +48,7 @@
         <!-- Label Text -->
         <Style Selector="TextBlock.artifact-label">
             <Setter Property="Foreground" Value="{DynamicResource ArtifactLabelBrush}" />
-            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         

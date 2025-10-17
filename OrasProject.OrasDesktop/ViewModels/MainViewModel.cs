@@ -13,6 +13,8 @@ using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
 using ReactiveUI;
 using System.Text.Json;
+using OrasProject.Oras.Registry;
+using OrasProject.Oras.Exceptions;
 
 namespace OrasProject.OrasDesktop.ViewModels
 {
@@ -20,6 +22,9 @@ namespace OrasProject.OrasDesktop.ViewModels
     {
         private readonly IRegistryService _registryService;
         private readonly JsonHighlightService _jsonHighlightService;
+
+        // Events
+        public event EventHandler? RegistryConnected;
 
         // Properties
         private string _registryUrl = "mcr.microsoft.com";
@@ -47,6 +52,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _artifactSizeSummary = string.Empty;
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
+        private DigestContextMenuViewModel _digestContextMenu = new();
+        
+        // Debounced selection timers
+        private System.Threading.Timer? _repositorySelectionTimer;
+        private System.Threading.Timer? _tagSelectionTimer;
+        private const int SelectionDebounceMilliseconds = 500; // Wait 500ms before loading
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -63,6 +74,13 @@ namespace OrasProject.OrasDesktop.ViewModels
             _registryService = registryService;
             _jsonHighlightService = jsonHighlightService;
 
+            // Setup digest context menu with clipboard access
+            _digestContextMenu.SetTopLevelProvider(() =>
+            {
+                var window = GetMainWindow();
+                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
+            });
+
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
             ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
@@ -73,31 +91,95 @@ namespace OrasProject.OrasDesktop.ViewModels
             LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
 
-            // Setup property change handlers
+            // Setup property change handlers with debouncing
             this.WhenAnyValue(x => x.SelectedRepository)
                 .WhereNotNull()
-                .Subscribe(async repo => await LoadTagsAsync(repo));
+                .Subscribe(repo => ScheduleRepositoryLoad(repo));
 
             this.WhenAnyValue(x => x.SelectedTag)
                 .WhereNotNull()
-                .Subscribe(async tag =>
-                {
-                    SelectedTagReference = tag.FullReference;
-                    Referrers.Clear();
-                    ReferrersLoading = false;
-                    // Reset progress bar to default state
-                    ProgressValue = 0;
-                    // Clear size information
-                    ArtifactSizeSummary = string.Empty;
-                    PlatformImageSizes.Clear();
-                    HasPlatformSizes = false;
-                    await LoadManifestAsync(tag);
-                });
+                .Subscribe(tag => ScheduleTagLoad(tag));
 
             // Auth type observer removed as the UI component was removed
 
             _repositories.CollectionChanged += RepositoriesCollectionChanged;
             this.RaisePropertyChanged(nameof(HasRepositories));
+        }
+
+        // Debounced selection methods
+        private void ScheduleRepositoryLoad(Repository repository)
+        {
+            // Cancel any pending timer
+            _repositorySelectionTimer?.Dispose();
+            
+            // Create new timer that will fire after the debounce period
+            _repositorySelectionTimer = new System.Threading.Timer(
+                _ =>
+                {
+                    // Marshal back to UI thread
+                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    {
+                        await LoadTagsAsync(repository);
+                    });
+                },
+                null,
+                SelectionDebounceMilliseconds,
+                System.Threading.Timeout.Infinite
+            );
+        }
+
+        private void ScheduleTagLoad(Tag tag)
+        {
+            // Update UI immediately (no network call)
+            SelectedTagReference = tag.FullReference;
+            Referrers.Clear();
+            ReferrersLoading = false;
+            ProgressValue = 0;
+            ArtifactSizeSummary = string.Empty;
+            PlatformImageSizes.Clear();
+            HasPlatformSizes = false;
+            
+            // Cancel any pending timer
+            _tagSelectionTimer?.Dispose();
+            
+            // Create new timer that will fire after the debounce period
+            _tagSelectionTimer = new System.Threading.Timer(
+                _ =>
+                {
+                    // Marshal back to UI thread
+                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    {
+                        await LoadManifestAsync(tag);
+                    });
+                },
+                null,
+                SelectionDebounceMilliseconds,
+                System.Threading.Timeout.Infinite
+            );
+        }
+
+        /// <summary>
+        /// Forces immediate loading of tags for the selected repository (called when Enter is pressed)
+        /// </summary>
+        public void ForceLoadSelectedRepository()
+        {
+            _repositorySelectionTimer?.Dispose();
+            if (SelectedRepository != null)
+            {
+                _ = LoadTagsAsync(SelectedRepository);
+            }
+        }
+
+        /// <summary>
+        /// Forces immediate loading of manifest for the selected tag (called when Enter is pressed)
+        /// </summary>
+        public void ForceLoadSelectedTag()
+        {
+            _tagSelectionTimer?.Dispose();
+            if (SelectedTag != null)
+            {
+                _ = LoadManifestAsync(SelectedTag);
+            }
         }
 
         // Property accessors
@@ -326,6 +408,12 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
         }
 
+        public DigestContextMenuViewModel DigestContextMenu
+        {
+            get => _digestContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _digestContextMenu, value);
+        }
+
         public Manifest? CurrentManifest
         {
             get => _currentManifest;
@@ -462,6 +550,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     }
                     ApplyRepositoryFilter();
                     StatusMessage = "Connected to registry (authenticated)";
+                    RegistryConnected?.Invoke(this, EventArgs.Empty);
                     return;
                 }
 
@@ -482,6 +571,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         }
                         ApplyRepositoryFilter();
                         StatusMessage = "Connected to registry (anonymous)";
+                        RegistryConnected?.Invoke(this, EventArgs.Empty);
                     }
                 }
                 catch (Exception)
@@ -553,6 +643,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     }
                     ApplyRepositoryFilter();
                     StatusMessage = "Connected to registry (authenticated)";
+                    RegistryConnected?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Services.RegistryOperationException regEx)
@@ -756,6 +847,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
                 ManifestContent = CurrentManifest.RawContent;
+
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repoPath;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
@@ -1080,61 +1176,50 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             IsBusy = true;
-            StatusMessage = $"Processing reference {SelectedTagReference}...";
+            string originalReference = SelectedTagReference.Trim();
+            StatusMessage = $"Processing reference {originalReference}...";
 
             try
             {
-                // Parse the reference string: <registry>/<repository>:<tag>
-                string reference = SelectedTagReference.Trim();
-
-                // First, check if it's a digest reference (ends with @sha256:...)
-                bool isDigestReference = reference.Contains("@sha256:");
-
-                // Check if it's a valid reference format
-                string fullRepository;
-                string tagOrDigest;
-
-                if (isDigestReference)
+                // Validate and parse the reference using ORAS library
+                Reference? parsedRef = null;
+                try
                 {
-                    // Handle digest format: <registry>/<repository>@sha256:digest
-                    int atIndex = reference.LastIndexOf('@');
-                    if (atIndex <= 0)
+                    if (!Reference.TryParse(originalReference, out parsedRef))
                     {
-                        StatusMessage = "Invalid reference format";
+                        StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
                         return;
                     }
-
-                    fullRepository = reference.Substring(0, atIndex);
-                    tagOrDigest = reference.Substring(atIndex + 1); // Include sha256: prefix
                 }
-                else
+                catch (FormatException ex)
                 {
-                    // Handle tag format: <registry>/<repository>:<tag>
-                    int colonIndex = reference.LastIndexOf(':');
-                    if (colonIndex <= 0)
-                    {
-                        StatusMessage = "Invalid reference format";
-                        return;
-                    }
-
-                    fullRepository = reference.Substring(0, colonIndex);
-                    tagOrDigest = reference.Substring(colonIndex + 1);
+                    // Catch InvalidResponseException and other format exceptions from ORAS library
+                    StatusMessage = $"Error parsing reference: {ex.Message}";
+                    return;
                 }
-
-                // Extract registry and repository parts
-                string registry;
-                string repository;
-
-                // Find the first slash that separates registry from repository
-                int firstSlashIndex = fullRepository.IndexOf('/');
-                if (firstSlashIndex <= 0)
+                catch (Exception ex)
                 {
-                    StatusMessage = "Invalid reference format - missing registry or repository path";
+                    StatusMessage = $"Unexpected error parsing reference: {ex.Message}";
+                    return;
+                }
+                
+                if (parsedRef == null || 
+                    string.IsNullOrEmpty(parsedRef.Registry) || 
+                    string.IsNullOrEmpty(parsedRef.Repository))
+                {
+                    StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
                     return;
                 }
 
-                registry = fullRepository.Substring(0, firstSlashIndex);
-                repository = fullRepository.Substring(firstSlashIndex + 1);
+                string registry = parsedRef.Registry;
+                string repository = parsedRef.Repository;
+                
+                // ContentReference can be either a tag or digest
+                // Check if it's a digest by seeing if it starts with a hash algorithm (e.g., "sha256:")
+                string? contentRef = parsedRef.ContentReference;
+                bool isDigestReference = !string.IsNullOrEmpty(contentRef) && contentRef.Contains(':') && 
+                                        (contentRef.StartsWith("sha256:") || contentRef.StartsWith("sha512:"));
+                string tagOrDigest = contentRef ?? "latest";
 
                 // Check if we need to connect to a different registry
                 bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);
@@ -1315,7 +1400,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 }
 
                 // Now load the manifest
-                StatusMessage = $"Loading manifest for {reference}...";
+                StatusMessage = $"Loading manifest for {originalReference}...";
 
                 ManifestResult manifest;
 
@@ -1347,6 +1432,11 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 ManifestContent = CurrentManifest.RawContent;
 
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repository;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
+
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
@@ -1358,7 +1448,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                 IsProgressIndeterminate = false;
                 _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
 
-                StatusMessage = $"Loaded manifest for {reference}";
+                // IMPORTANT: Preserve the original pasted reference instead of resetting it
+                SelectedTagReference = originalReference;
+
+                // Try to find and select the matching tag in the UI if it exists
+                await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
+
+                StatusMessage = $"Loaded manifest for {originalReference}";
             }
             catch (Exception ex)
             {
@@ -1418,6 +1514,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repoPath;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
@@ -1549,7 +1650,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             if (!string.IsNullOrWhiteSpace(TagFilterText))
             {
                 var trimmed = TagFilterText.Trim();
-                source = source.Where(t => t.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+                source = source.Where(t => WildcardFilter.Matches(t.Name, trimmed));
             }
 
             var filtered = source.ToList();
@@ -1589,7 +1690,12 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         private Repository? PruneRepository(Repository source, string filter)
         {
-            bool selfMatch = source.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            // Check both the name (for simple matches like "ai") and the full path relative to registry
+            // (for hierarchical matches like "bicep/ai")
+            string relativePath = source.FullPath.Replace($"{source.Registry?.Url ?? ""}/", "");
+            bool selfMatch = WildcardFilter.Matches(source.Name, filter) || 
+                            WildcardFilter.Matches(relativePath, filter);
+            
             var prunedChildren = new List<Repository>();
             foreach (var child in source.Children)
             {
@@ -1702,6 +1808,58 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Tries to find and select a matching tag in the tag list after loading a manifest by reference.
+        /// This ensures the UI stays in sync when a fully qualified reference is pasted.
+        /// </summary>
+        private async Task TrySelectMatchingTag(string repository, string tagOrDigest, bool isDigestReference)
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // If we have tags loaded and they match this repository
+                if (_allTags.Count > 0 && SelectedRepository != null)
+                {
+                    string currentRepoPath = SelectedRepository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
+                    
+                    if (string.Equals(currentRepoPath, repository, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Try to find the matching tag
+                        Tag? matchingTag = null;
+
+                        if (isDigestReference)
+                        {
+                            // For digest references, we can't easily match to a tag name
+                            // But we can check if any tag has the same digest (if we have that info)
+                            // For now, just keep the current selection or clear it
+                            if (SelectedTag != null && !string.Equals(SelectedTag.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Don't clear selection, just let it stay as-is since digest might match
+                            }
+                        }
+                        else
+                        {
+                            // For tag references, find exact match
+                            matchingTag = _allTags.FirstOrDefault(t => 
+                                string.Equals(t.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase));
+
+                            if (matchingTag != null && SelectedTag != matchingTag)
+                            {
+                                // Select the matching tag without triggering a reload
+                                // Cancel any pending debounced load timer first
+                                _tagSelectionTimer?.Dispose();
+                                
+                                _selectedTag = matchingTag;
+                                this.RaisePropertyChanged(nameof(SelectedTag));
+                                
+                                // Cancel the timer again in case RaisePropertyChanged triggered it
+                                _tagSelectionTimer?.Dispose();
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         private Repository? FindRepositoryByName(Repository parent, string name)
