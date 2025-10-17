@@ -1,0 +1,117 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- 
+    Typography System
+    Professional desktop app font sizing based on Microsoft/Visual Studio standards:
+    - Base UI font: 12pt (default)
+    - Small UI elements: 11pt (status bar, metadata)
+    - Headers: 13-14pt
+    - Code/monospace: 12pt
+    - Tooltips: 12pt
+    -->
+    
+    <!-- Default Control Font Sizes -->
+    <Style Selector="TextBox">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="Button">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="ListBox">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="TreeView">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="ComboBox">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="MenuItem">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="ToolTip">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <!-- Section Headers (Repositories, Tags, Artifact Details) -->
+    <Style Selector="TextBlock.section-header">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    
+    <!-- Window Title -->
+    <Style Selector="Window">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <!-- Labels (form labels, field labels) -->
+    <Style Selector="TextBlock.label">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    
+    <!-- Small text (status bar, metadata, secondary info) -->
+    <Style Selector="TextBlock.small">
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+    
+    <!-- Code/Technical text (digests, JSON, commands) -->
+    <Style Selector="TextBlock.code">
+        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <!-- Artifact Details Panel Styles -->
+    <Style Selector="TextBlock.artifact-label">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    
+    <Style Selector="TextBlock.artifact-value">
+        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <!-- Platform Names -->
+    <Style Selector="TextBlock.platform-name">
+        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    
+    <!-- Status Bar -->
+    <Style Selector="Border.status-bar TextBlock">
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+    
+    <!-- Reference Bar -->
+    <Style Selector="Border.reference-bar TextBlock">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="Border.reference-bar TextBox">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+    </Style>
+    
+    <!-- Repository/Tag List Items -->
+    <Style Selector="TreeViewItem TextBlock">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+    <Style Selector="ListBoxItem TextBlock">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    
+</Styles>
