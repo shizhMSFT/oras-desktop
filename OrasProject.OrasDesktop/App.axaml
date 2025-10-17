@@ -4,12 +4,57 @@
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ArtifactPanelBackground">#F5F5F5</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactPanelBorder">#E0E0E0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactLabelBrush">#666666</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactValueBrush">#1A1A1A</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabSelectedBackground">#0078D4</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabSelectedForeground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBorder">#D0D0D0</SolidColorBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ArtifactPanelBackground">#2D2D30</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactPanelBorder">#3F3F46</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactLabelBrush">#9E9E9E</SolidColorBrush>
+                    <SolidColorBrush x:Key="ArtifactValueBrush">#E0E0E0</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabSelectedBackground">#0078D4</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabSelectedForeground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBackground">#1E1E1E</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBorder">#3F3F46</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+        
         <Style Selector="Border.ManifestViewer">
             <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
         </Style>
+        
+        <!-- Artifact Details Panel Background -->
+        <Style Selector="Border.artifact-panel">
+            <Setter Property="Background" Value="{DynamicResource ArtifactPanelBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ArtifactPanelBorder}" />
+        </Style>
+        
+        <!-- Label Text -->
+        <Style Selector="TextBlock.artifact-label">
+            <Setter Property="Foreground" Value="{DynamicResource ArtifactLabelBrush}" />
+        </Style>
+        
+        <!-- Value Text -->
+        <Style Selector="TextBlock.artifact-value">
+            <Setter Property="Foreground" Value="{DynamicResource ArtifactValueBrush}" />
+        </Style>
+        
         <Style Selector="SelectableTextBlock.code-view">
             <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', 'JetBrains Mono', monospace" />
             <Setter Property="FontSize" Value="13" />

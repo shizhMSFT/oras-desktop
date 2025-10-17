@@ -181,18 +181,9 @@
         
         <!-- Content with darker background -->
         <Border
+          Classes="artifact-panel"
           CornerRadius="3"
           BorderThickness="1">
-          <Border.Styles>
-            <Style Selector="Border">
-              <Setter Property="Background" Value="#F5F5F5" />
-              <Setter Property="BorderBrush" Value="#E0E0E0" />
-            </Style>
-            <Style Selector="Border:dark">
-              <Setter Property="Background" Value="#2D2D30" />
-              <Setter Property="BorderBrush" Value="#3F3F46" />
-            </Style>
-          </Border.Styles>
           <ScrollViewer
             Padding="12"
             VerticalScrollBarVisibility="Auto"
@@ -230,34 +221,53 @@
               </Grid>
               
               <!-- Digest -->
-              <TextBlock
-                Grid.Row="1"
-                Margin="0,0,0,10"
-                Text="{Binding CurrentManifest.Digest}"
-                FontFamily="Consolas"
-                FontSize="12"
-                Foreground="Gray" />
+              <StackPanel Grid.Row="1" Margin="0,0,0,8" Orientation="Horizontal" Spacing="8"
+                          IsVisible="{Binding CurrentManifest, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock
+                  Classes="artifact-label"
+                  Text="Digest:"
+                  FontSize="12"
+                  FontWeight="SemiBold"
+                  VerticalAlignment="Center" />
+                <TextBlock
+                  Classes="artifact-value"
+                  Text="{Binding CurrentManifest.Digest}"
+                  FontSize="12"
+                  FontWeight="Normal"
+                  VerticalAlignment="Center" />
+              </StackPanel>
               
               <!-- Size Summary -->
-              <TextBlock
-                Grid.Row="2"
-                Margin="0,0,0,5"
-                FontWeight="Normal"
-                FontStyle="Italic"
-                Text="{Binding ArtifactSizeSummary}"
-                IsVisible="{Binding !HasPlatformSizes}" />
+              <StackPanel Grid.Row="2" Margin="0,0,0,8" Orientation="Horizontal" Spacing="8"
+                          IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock
+                  Classes="artifact-label"
+                  Text="Image size:"
+                  FontSize="12"
+                  FontWeight="SemiBold"
+                  VerticalAlignment="Center" />
+                <TextBlock
+                  Classes="artifact-value"
+                  Text="{Binding ArtifactSizeSummary}"
+                  FontSize="12"
+                  FontWeight="Normal"
+                  VerticalAlignment="Center" />
+              </StackPanel>
 
               <!-- Platform Image Sizes -->
-              <Grid Grid.Row="3" Margin="0,0,0,5" IsVisible="{Binding HasPlatformSizes}">
+              <Grid Grid.Row="3" Margin="0,0,0,8" IsVisible="{Binding HasPlatformSizes}">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto"/>
                   <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
-                  <TextBlock FontWeight="Bold" Text="Platform Image Sizes" VerticalAlignment="Center"/>
-                  <TextBlock Text="—" VerticalAlignment="Center" Opacity="0.6"/>
-                  <TextBlock Text="{Binding ArtifactSizeSummary}" VerticalAlignment="Center" FontStyle="Italic" Opacity="0.6"/>
-                </StackPanel>
+                <TextBlock 
+                  Classes="artifact-label"
+                  Grid.Row="0" 
+                  Margin="0,0,0,8" 
+                  FontSize="12" 
+                  FontWeight="SemiBold" 
+                  Text="Platform Image Sizes:" 
+                  VerticalAlignment="Center" />
                 <Border
                   Grid.Row="1"
                   BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -342,27 +352,19 @@
 
                   <!-- Selected state -->
                   <Style Selector="#ManifestTabs > TabItem:selected">
-                    <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
-                    <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
-                    <Setter Property="FontWeight" Value="SemiBold" />
+                    <Setter Property="Background" Value="{DynamicResource TabSelectedBackground}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TabSelectedForeground}" />
+                    <Setter Property="FontWeight" Value="Bold" />
                   </Style>
                 </TabControl.Styles>
                 <TabItem Header="Manifest">
                   <Border
+                    Background="{DynamicResource TabContentBackground}"
+                    BorderBrush="{DynamicResource TabContentBorder}"
                     BorderThickness="0"
                     CornerRadius="0"
                     Padding="12,8"
                     Margin="-12,0,-12,-8">
-                    <Border.Styles>
-                      <Style Selector="Border">
-                        <Setter Property="Background" Value="White" />
-                        <Setter Property="BorderBrush" Value="#D0D0D0" />
-                      </Style>
-                      <Style Selector="Border:dark">
-                        <Setter Property="Background" Value="#1E1E1E" />
-                        <Setter Property="BorderBrush" Value="#3F3F46" />
-                      </Style>
-                    </Border.Styles>
                     <ScrollViewer
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto"
@@ -378,21 +380,13 @@
                 </TabItem>
                 <TabItem Header="Referrers">
                   <Border
+                    Background="{DynamicResource TabContentBackground}"
+                    BorderBrush="{DynamicResource TabContentBorder}"
                     BorderThickness="0"
                     CornerRadius="0"
                     Padding="12,8"
                     Margin="-12,0,-12,-8"
                     MinHeight="120">
-                    <Border.Styles>
-                      <Style Selector="Border">
-                        <Setter Property="Background" Value="White" />
-                        <Setter Property="BorderBrush" Value="#D0D0D0" />
-                      </Style>
-                      <Style Selector="Border:dark">
-                        <Setter Property="Background" Value="#1E1E1E" />
-                        <Setter Property="BorderBrush" Value="#3F3F46" />
-                      </Style>
-                    </Border.Styles>
                     <ScrollViewer 
                       VerticalScrollBarVisibility="Auto"
                       MaxHeight="400">
