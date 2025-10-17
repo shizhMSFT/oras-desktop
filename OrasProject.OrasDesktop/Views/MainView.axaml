@@ -197,13 +197,37 @@
             Padding="12"
             VerticalScrollBarVisibility="Auto"
             HorizontalScrollBarVisibility="Disabled">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
-              <!-- Header -->
-              <TextBlock
-                Grid.Row="0"
-                Margin="0,0,0,10"
-                FontWeight="Bold"
-                Text="Artifact Details" />
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+              <!-- Header with action buttons -->
+              <Grid Grid.Row="0" Margin="0,0,0,10" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock
+                  Grid.Column="0"
+                  FontWeight="Bold"
+                  VerticalAlignment="Center"
+                  Text="Artifact Details" />
+                
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
+                  <Button
+                    Width="28"
+                    Height="28"
+                    Padding="0"
+                    Command="{Binding DeleteManifestCommand}"
+                    IsEnabled="{Binding CanModifySelectedTag}"
+                    ToolTip.Tip="Delete manifest">
+                    <Button.Styles>
+                      <Style Selector="Button:disabled">
+                        <Setter Property="Opacity" Value="0.3" />
+                      </Style>
+                    </Button.Styles>
+                    <Path
+                      Width="16"
+                      Height="16"
+                      Data="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
+                      Fill="{DynamicResource ButtonForeground}"
+                      Stretch="Uniform" />
+                  </Button>
+                </StackPanel>
+              </Grid>
               
               <!-- Digest -->
               <TextBlock
@@ -270,20 +294,9 @@
                 </Border>
               </Grid>
 
-              <StackPanel
-                Grid.Row="4"
-                Margin="0,0,0,5"
-                Orientation="Horizontal"
-                Spacing="5">
-                <Button
-                  Command="{Binding DeleteManifestCommand}"
-                  Content="Delete"
-                  IsEnabled="{Binding CanModifySelectedTag}" />
-              </StackPanel>
-              
               <!-- TabControl -->
               <TabControl
-                Grid.Row="5"
+                Grid.Row="4"
                 x:Name="ManifestTabs"
                 Background="Transparent"
                 BorderThickness="0"
