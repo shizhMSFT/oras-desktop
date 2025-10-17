@@ -48,11 +48,28 @@
         <!-- Label Text -->
         <Style Selector="TextBlock.artifact-label">
             <Setter Property="Foreground" Value="{DynamicResource ArtifactLabelBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         
         <!-- Value Text -->
         <Style Selector="TextBlock.artifact-value">
             <Setter Property="Foreground" Value="{DynamicResource ArtifactValueBrush}" />
+            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', monospace" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        
+        <!-- Section Headers (Repositories, Tags, etc.) -->
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        
+        <!-- Platform/Technical Names -->
+        <Style Selector="TextBlock.platform-name">
+            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', monospace" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
         
         <Style Selector="SelectableTextBlock.code-view">

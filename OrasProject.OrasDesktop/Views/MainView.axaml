@@ -72,7 +72,7 @@
               Spacing="4"
               VerticalAlignment="Center">
               <TextBlock
-                FontWeight="Bold"
+                Classes="section-header"
                 VerticalAlignment="Center"
                 Text="Repositories" />
               <Button
@@ -135,7 +135,7 @@
               Spacing="4"
               VerticalAlignment="Center">
               <TextBlock
-                FontWeight="Bold"
+                Classes="section-header"
                 VerticalAlignment="Center"
                 Text="Tags" />
               <Button
@@ -184,134 +184,136 @@
           Classes="artifact-panel"
           CornerRadius="3"
           BorderThickness="1">
-          <ScrollViewer
-            Padding="12"
-            VerticalScrollBarVisibility="Auto"
-            HorizontalScrollBarVisibility="Disabled">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
-              <!-- Header with action buttons -->
-              <Grid Grid.Row="0" Margin="0,0,0,10" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock
-                  Grid.Column="0"
-                  FontWeight="Bold"
-                  VerticalAlignment="Center"
-                  Text="Artifact Details" />
-                
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
-                  <Button
-                    Width="28"
-                    Height="28"
-                    Padding="0"
-                    Command="{Binding DeleteManifestCommand}"
-                    IsEnabled="{Binding CanModifySelectedTag}"
-                    ToolTip.Tip="Delete manifest">
-                    <Button.Styles>
-                      <Style Selector="Button:disabled">
-                        <Setter Property="Opacity" Value="0.3" />
-                      </Style>
-                    </Button.Styles>
-                    <Path
-                      Width="16"
-                      Height="16"
-                      Data="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
-                      Fill="{DynamicResource ButtonForeground}"
-                      Stretch="Uniform" />
-                  </Button>
+          <Grid RowDefinitions="Auto,*">
+            <!-- Header with action buttons (non-scrolling) -->
+            <Grid Grid.Row="0" Margin="12,12,12,10" ColumnDefinitions="Auto,*,Auto">
+              <TextBlock
+                Classes="section-header"
+                Grid.Column="0"
+                VerticalAlignment="Center"
+                Text="Artifact Details" />
+              
+              <Button
+                Grid.Column="2"
+                Width="28"
+                Height="28"
+                Padding="0"
+                Command="{Binding DeleteManifestCommand}"
+                IsEnabled="{Binding CanModifySelectedTag}"
+                ToolTip.Tip="Delete manifest"
+                HorizontalAlignment="Right">
+                <Button.Styles>
+                  <Style Selector="Button:disabled">
+                    <Setter Property="Opacity" Value="0.3" />
+                  </Style>
+                </Button.Styles>
+                <Path
+                  Width="16"
+                  Height="16"
+                  Data="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
+                  Fill="{DynamicResource ButtonForeground}"
+                  Stretch="Uniform" />
+              </Button>
+            </Grid>
+            
+            <!-- Content split into static info and tabs -->
+            <Grid Grid.Row="1" RowDefinitions="Auto,*">
+              <!-- Static info (scrollable if needed) -->
+              <ScrollViewer
+                Grid.Row="0"
+                Padding="12,0,12,0"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                MaxHeight="250">
+                <StackPanel>
+                  <!-- Digest -->
+                  <StackPanel Margin="0,0,0,10" Orientation="Horizontal" Spacing="10"
+                              IsVisible="{Binding CurrentManifest, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <TextBlock
+                      Classes="artifact-label"
+                      Text="Digest:"
+                      VerticalAlignment="Center" />
+                    <TextBlock
+                      Classes="artifact-value"
+                      Text="{Binding CurrentManifest.Digest}"
+                      VerticalAlignment="Center"
+                      TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  
+                  <!-- Size Summary -->
+                  <StackPanel Margin="0,0,0,10" Orientation="Horizontal" Spacing="10"
+                              IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock
+                      Classes="artifact-label"
+                      Text="Image size:"
+                      VerticalAlignment="Center" />
+                    <TextBlock
+                      Classes="artifact-value"
+                      Text="{Binding ArtifactSizeSummary}"
+                      VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <!-- Platform Image Sizes -->
+                  <Grid Margin="0,0,0,10" IsVisible="{Binding HasPlatformSizes}">
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock 
+                      Classes="artifact-label"
+                      Grid.Row="0" 
+                      Margin="0,0,0,8" 
+                      Text="Platform Image Sizes:" 
+                      VerticalAlignment="Center" />
+                    <Border
+                      Grid.Row="1"
+                      BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                      BorderThickness="1"
+                      CornerRadius="3"
+                      MinHeight="60"
+                      MaxHeight="150"
+                      Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                      <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0">
+                        <ItemsControl ItemsSource="{Binding PlatformImageSizes}" Margin="4">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Border Margin="0,2" Padding="6,4" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                  <Button Grid.Column="0" Padding="4,2" Background="Transparent" 
+                                          BorderThickness="0" Cursor="Hand"
+                                          Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).ViewPlatformManifestCommand}"
+                                          CommandParameter="{Binding}"
+                                          ToolTip.Tip="Click to view platform-specific manifest">
+                                    <TextBlock Classes="platform-name"
+                                              Text="{Binding Platform}"
+                                              VerticalAlignment="Center"
+                                              Foreground="{DynamicResource SystemAccentColor}"/>
+                                  </Button>
+                                  <ProgressBar Grid.Column="1" Margin="12,0" Height="8" Minimum="0" Maximum="100" 
+                                              Value="{Binding RelativePercentage}" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}" Foreground="{DynamicResource SystemAccentColor}"/>
+                                  <TextBlock Classes="artifact-value"
+                                            Grid.Column="2" 
+                                            Text="{Binding HumanReadableSize}" 
+                                            VerticalAlignment="Center"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </Border>
+                  </Grid>
                 </StackPanel>
-              </Grid>
-              
-              <!-- Digest -->
-              <StackPanel Grid.Row="1" Margin="0,0,0,8" Orientation="Horizontal" Spacing="8"
-                          IsVisible="{Binding CurrentManifest, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <TextBlock
-                  Classes="artifact-label"
-                  Text="Digest:"
-                  FontSize="12"
-                  FontWeight="SemiBold"
-                  VerticalAlignment="Center" />
-                <TextBlock
-                  Classes="artifact-value"
-                  Text="{Binding CurrentManifest.Digest}"
-                  FontSize="12"
-                  FontWeight="Normal"
-                  VerticalAlignment="Center" />
-              </StackPanel>
-              
-              <!-- Size Summary -->
-              <StackPanel Grid.Row="2" Margin="0,0,0,8" Orientation="Horizontal" Spacing="8"
-                          IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                <TextBlock
-                  Classes="artifact-label"
-                  Text="Image size:"
-                  FontSize="12"
-                  FontWeight="SemiBold"
-                  VerticalAlignment="Center" />
-                <TextBlock
-                  Classes="artifact-value"
-                  Text="{Binding ArtifactSizeSummary}"
-                  FontSize="12"
-                  FontWeight="Normal"
-                  VerticalAlignment="Center" />
-              </StackPanel>
+              </ScrollViewer>
 
-              <!-- Platform Image Sizes -->
-              <Grid Grid.Row="3" Margin="0,0,0,8" IsVisible="{Binding HasPlatformSizes}">
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto"/>
-                  <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <TextBlock 
-                  Classes="artifact-label"
-                  Grid.Row="0" 
-                  Margin="0,0,0,8" 
-                  FontSize="12" 
-                  FontWeight="SemiBold" 
-                  Text="Platform Image Sizes:" 
-                  VerticalAlignment="Center" />
-                <Border
-                  Grid.Row="1"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-                  BorderThickness="1"
-                  CornerRadius="3"
-                  MinHeight="60"
-                  MaxHeight="150"
-                  Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
-                  <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0">
-                    <ItemsControl ItemsSource="{Binding PlatformImageSizes}" Margin="4">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <Border Margin="0,2" Padding="6,4" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                              <Button Grid.Column="0" Padding="4,2" Background="Transparent" 
-                                      BorderThickness="0" Cursor="Hand"
-                                      Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).ViewPlatformManifestCommand}"
-                                      CommandParameter="{Binding}"
-                                      ToolTip.Tip="Click to view platform-specific manifest">
-                                <TextBlock Text="{Binding Platform}" FontFamily="Consolas" 
-                                          FontWeight="SemiBold" VerticalAlignment="Center"
-                                          Foreground="{DynamicResource SystemAccentColor}"/>
-                              </Button>
-                              <ProgressBar Grid.Column="1" Margin="12,0" Height="8" Minimum="0" Maximum="100" 
-                                          Value="{Binding RelativePercentage}" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}" Foreground="{DynamicResource SystemAccentColor}"/>
-                              <TextBlock Grid.Column="2" Text="{Binding HumanReadableSize}" 
-                                        Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" VerticalAlignment="Center"/>
-                            </Grid>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-                </Border>
-              </Grid>
-
-              <!-- TabControl -->
+              <!-- TabControl (expands with window) -->
               <TabControl
-                Grid.Row="4"
+                Grid.Row="1"
                 x:Name="ManifestTabs"
                 Background="Transparent"
                 BorderThickness="0"
-                Margin="-12,10,-12,0"
-                MinHeight="20"
+                Margin="0,16,0,12"
+                MinHeight="150"
                 Padding="0">
                 <TabControl.Styles>
                   <!-- Style TabItems with custom template to remove underlines -->
@@ -358,39 +360,36 @@
                   </Style>
                 </TabControl.Styles>
                 <TabItem Header="Manifest">
-                  <Border
-                    Background="{DynamicResource TabContentBackground}"
-                    BorderBrush="{DynamicResource TabContentBorder}"
-                    BorderThickness="0"
-                    CornerRadius="0"
-                    Padding="12,8"
-                    Margin="-12,0,-12,-8">
-                    <ScrollViewer
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto"
-                      MaxHeight="400">
+                  <ScrollViewer
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto">
+                    <Border
+                      Background="{DynamicResource TabContentBackground}"
+                      BorderBrush="{DynamicResource TabContentBorder}"
+                      BorderThickness="0"
+                      CornerRadius="0"
+                      Padding="12,4,12,12"
+                      Margin="0,2,0,0">
                       <ContentControl
                         Content="{Binding ManifestViewer}"
                         Padding="4,4,20,4"
                         Background="Transparent"
                         FontFamily="Consolas"
                         Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
-                    </ScrollViewer>
-                  </Border>
+                    </Border>
+                  </ScrollViewer>
                 </TabItem>
                 <TabItem Header="Referrers">
-                  <Border
-                    Background="{DynamicResource TabContentBackground}"
-                    BorderBrush="{DynamicResource TabContentBorder}"
-                    BorderThickness="0"
-                    CornerRadius="0"
-                    Padding="12,8"
-                    Margin="-12,0,-12,-8"
-                    MinHeight="120">
-                    <ScrollViewer 
-                      VerticalScrollBarVisibility="Auto"
-                      MaxHeight="400">
-                        <TreeView ItemsSource="{Binding Referrers}" Classes="code-view">
+                  <ScrollViewer 
+                    VerticalScrollBarVisibility="Auto">
+                    <Border
+                      Background="{DynamicResource TabContentBackground}"
+                      BorderBrush="{DynamicResource TabContentBorder}"
+                      BorderThickness="0"
+                      CornerRadius="0"
+                      Padding="12,4,12,12"
+                      Margin="0,2,0,0">
+                      <TreeView ItemsSource="{Binding Referrers}" Classes="code-view">
                         <TreeView.ItemTemplate>
                           <TreeDataTemplate ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -399,12 +398,12 @@
                           </TreeDataTemplate>
                         </TreeView.ItemTemplate>
                       </TreeView>
-                    </ScrollViewer>
-                  </Border>
+                    </Border>
+                  </ScrollViewer>
                 </TabItem>
               </TabControl>
             </Grid>
-          </ScrollViewer>
+          </Grid>
         </Border>
       </Grid>
     </Grid>
