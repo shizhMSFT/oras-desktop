@@ -47,6 +47,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private string _artifactSizeSummary = string.Empty;
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
+        private DigestContextMenuViewModel _digestContextMenu = new();
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -62,6 +63,13 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             _registryService = registryService;
             _jsonHighlightService = jsonHighlightService;
+
+            // Setup digest context menu with clipboard access
+            _digestContextMenu.SetTopLevelProvider(() =>
+            {
+                var window = GetMainWindow();
+                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
+            });
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
@@ -324,6 +332,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _hasPlatformSizes;
             set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
+        }
+
+        public DigestContextMenuViewModel DigestContextMenu
+        {
+            get => _digestContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _digestContextMenu, value);
         }
 
         public Manifest? CurrentManifest
@@ -756,6 +770,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
                 ManifestContent = CurrentManifest.RawContent;
+
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repoPath;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
@@ -1347,6 +1366,11 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 ManifestContent = CurrentManifest.RawContent;
 
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repository;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
+
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
@@ -1418,6 +1442,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+
+                // Update digest context menu
+                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Repository = repoPath;
+                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
