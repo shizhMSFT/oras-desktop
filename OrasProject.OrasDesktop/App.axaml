@@ -34,6 +34,9 @@
     <Application.Styles>
         <FluentTheme />
         
+        <!-- Import Typography System -->
+        <StyleInclude Source="/Themes/Typography.axaml" />
+        
         <Style Selector="Border.ManifestViewer">
             <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
@@ -48,33 +51,16 @@
         <!-- Label Text -->
         <Style Selector="TextBlock.artifact-label">
             <Setter Property="Foreground" Value="{DynamicResource ArtifactLabelBrush}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         
         <!-- Value Text -->
         <Style Selector="TextBlock.artifact-value">
             <Setter Property="Foreground" Value="{DynamicResource ArtifactValueBrush}" />
-            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', monospace" />
-            <Setter Property="FontSize" Value="12" />
-        </Style>
-        
-        <!-- Section Headers (Repositories, Tags, etc.) -->
-        <Style Selector="TextBlock.section-header">
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="13" />
-        </Style>
-        
-        <!-- Platform/Technical Names -->
-        <Style Selector="TextBlock.platform-name">
-            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', monospace" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="12" />
         </Style>
         
         <Style Selector="SelectableTextBlock.code-view">
-            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', 'JetBrains Mono', monospace" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundBrush}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="TextWrapping" Value="NoWrap" />
@@ -85,8 +71,8 @@
         <Style Selector="TreeView.code-view">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundBrush}" />
-            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', 'JetBrains Mono', monospace" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, Monaco, monospace" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="TreeView.code-view:dark">
             <Setter Property="Foreground" Value="#D4D4D4" />

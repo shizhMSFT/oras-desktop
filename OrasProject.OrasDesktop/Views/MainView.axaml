@@ -25,10 +25,10 @@
           Grid.Row="0"
           Margin="10,10,5,10"
           Orientation="Horizontal"
-          Spacing="5">
+          Spacing="10">
           <TextBlock
+            Classes="section-header"
             VerticalAlignment="Center"
-            FontWeight="Bold"
             Text="Registry:" />
           <TextBox
             Name="RegistryTextBox"
@@ -101,6 +101,7 @@
             <TextBox
               Grid.Row="1"
               Name="RepositoryFilterTextBox"
+              VerticalContentAlignment="Center"
               Watermark="Filter repositories (use * for wildcards)..."
               Text="{Binding RepositoryFilterText}"
               ToolTip.Tip="Filter repositories by name or path. Examples: bicep* (starts with), *packages* (contains), bicep/ai* (path match)" />
@@ -161,6 +162,7 @@
               Grid.Row="1"
               Name="TagFilterTextBox"
               Margin="0,0,0,3"
+              VerticalContentAlignment="Center"
               Watermark="Filter tags (use * for wildcards)..."
               Text="{Binding TagFilterText}"
               ToolTip.Tip="Filter tags by name. Examples: v1.* (version prefix), *-alpha (suffix match), *rc* (contains)" />
@@ -309,7 +311,7 @@
                   </Grid>
                   
                   <!-- Size Summary -->
-                  <Grid Margin="0,0,0,10" ColumnDefinitions="Auto,*"
+                  <Grid Margin="0,0,0,16" ColumnDefinitions="Auto,*"
                         IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                     <TextBlock
                       Grid.Column="0"
@@ -319,9 +321,10 @@
                       Margin="0,0,10,0" />
                     <TextBlock
                       Grid.Column="1"
-                      Classes="artifact-value"
+                      Classes="small"
                       Text="{Binding ArtifactSizeSummary}"
-                      VerticalAlignment="Center" />
+                      VerticalAlignment="Center"
+                      TextWrapping="Wrap" />
                   </Grid>
 
                   <!-- Platform Image Sizes -->
@@ -482,6 +485,7 @@
     <!--  Row 2: Reference  -->
     <Border
       Grid.Row="2"
+      Classes="reference-bar"
       Margin="0"
       BorderThickness="0"
       Background="{DynamicResource SystemControlBackgroundChromeHighBrush}">
@@ -516,8 +520,6 @@
           BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
           BorderThickness="1"
           CornerRadius="3"
-          FontFamily="Cascadia Code,JetBrains Mono,Menlo,Consolas,Liberation Mono"
-          FontSize="13"
           Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
           Watermark="Enter registry/repository:tag or @digest..."
           Text="{Binding SelectedTagReference}"
@@ -566,6 +568,7 @@
     <!--  Row 3: Status bar  -->
     <Border
       Grid.Row="3"
+      Classes="status-bar"
       Height="30"
       Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
       BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
