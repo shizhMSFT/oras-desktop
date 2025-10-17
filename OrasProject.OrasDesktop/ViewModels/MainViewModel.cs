@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
@@ -27,6 +28,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private ObservableCollection<Repository> _filteredRepositories = new();
         private Repository? _selectedRepository;
         private ObservableCollection<Tag> _tags = new ObservableCollection<Tag>();
+        private List<Tag> _allTags = new();
         private Tag? _selectedTag;
         private TextBlock? _manifestViewer;
         private Manifest? _currentManifest;
@@ -41,13 +43,15 @@ namespace OrasProject.OrasDesktop.ViewModels
         private double _progressValue;
         private bool _isProgressIndeterminate;
         private string _repositoryFilterText = string.Empty;
+    private string _tagFilterText = string.Empty;
         private string _artifactSizeSummary = string.Empty;
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
-        public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
+    public ReactiveCommand<Unit, Unit> RefreshRepositoriesCommand { get; }
+    public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
@@ -62,6 +66,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
             ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
+            RefreshRepositoriesCommand = ReactiveCommand.CreateFromTask(RefreshRepositoriesAsync);
             RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
@@ -90,6 +95,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                 });
 
             // Auth type observer removed as the UI component was removed
+
+            _repositories.CollectionChanged += RepositoriesCollectionChanged;
+            this.RaisePropertyChanged(nameof(HasRepositories));
         }
 
         // Property accessors
@@ -102,7 +110,25 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ObservableCollection<Repository> Repositories
         {
             get => _repositories;
-            set => this.RaiseAndSetIfChanged(ref _repositories, value);
+            private set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+
+                if (ReferenceEquals(_repositories, value))
+                {
+                    return;
+                }
+
+                var oldValue = _repositories;
+                this.RaiseAndSetIfChanged(ref _repositories, value);
+                if (oldValue != null)
+                {
+                    oldValue.CollectionChanged -= RepositoriesCollectionChanged;
+                }
+
+                _repositories.CollectionChanged += RepositoriesCollectionChanged;
+                this.RaisePropertyChanged(nameof(HasRepositories));
+            }
         }
 
         public ObservableCollection<Repository> FilteredRepositories
@@ -114,7 +140,15 @@ namespace OrasProject.OrasDesktop.ViewModels
         public Repository? SelectedRepository
         {
             get => _selectedRepository;
-            set => this.RaiseAndSetIfChanged(ref _selectedRepository, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedRepository, value);
+
+                if (value != null)
+                {
+                    ExpandRepositoryAncestors(value);
+                }
+            }
         }
 
         public ObservableCollection<Tag> Tags
@@ -235,6 +269,19 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
+        public string TagFilterText
+        {
+            get => _tagFilterText;
+            set
+            {
+                if (!string.Equals(_tagFilterText, value, StringComparison.Ordinal))
+                {
+                    this.RaiseAndSetIfChanged(ref _tagFilterText, value);
+                    ApplyTagFilter();
+                }
+            }
+        }
+
         public string ArtifactSizeSummary
         {
             get => _artifactSizeSummary;
@@ -261,6 +308,8 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
         public bool CanModifySelectedTag => _selectedTag != null;
+
+        public bool HasRepositories => _repositories.Count > 0;
 
         // Helper method to get the main window
         private Window? GetMainWindow()
@@ -534,30 +583,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Store the currently selected tag name if any
                 string? selectedTagName = SelectedTag?.Name;
 
-                Tags.Clear();
-                foreach (var tag in tags)
-                {
-                    Tags.Add(tag);
-                }
-
-                // Try to reselect the previously selected tag if it still exists
-                if (selectedTagName != null)
-                {
-                    var tagToSelect = Tags.FirstOrDefault(t => t.Name == selectedTagName);
-                    if (tagToSelect != null)
-                    {
-                        SelectedTag = tagToSelect;
-                    }
-                    else
-                    {
-                        // Clear selection if the tag no longer exists
-                        SelectedTag = null;
-                        // Also clear manifest display since the tag is gone
-                        ManifestContent = string.Empty;
-                        ManifestViewer = null;
-                        Referrers.Clear();
-                    }
-                }
+                _allTags = tags;
+                ApplyTagFilter(selectedTagName);
 
                 // Digest resolution removed for performance; resolved only when required for delete.
 
@@ -575,6 +602,94 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 IsBusy = false;
                 // Reset progress indicators
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
+            }
+        }
+
+        private async Task RefreshRepositoriesAsync()
+        {
+            IsBusy = true;
+            StatusMessage = "Refreshing repositories...";
+
+            try
+            {
+                var previousRepositoryPath = SelectedRepository?.FullPath.Replace(
+                    $"{_currentRegistry.Url}/",
+                    string.Empty
+                );
+                var previousSelectedTag = SelectedTag;
+
+                var repositories = await BuildRepositoryTreeAsync();
+
+                Repositories.Clear();
+                foreach (var repo in repositories)
+                {
+                    Repositories.Add(repo);
+                }
+
+                ApplyRepositoryFilter();
+
+                if (!string.IsNullOrEmpty(previousRepositoryPath))
+                {
+                    FindAndSelectRepository(previousRepositoryPath);
+
+                    var currentPath = SelectedRepository?.FullPath.Replace(
+                        $"{_currentRegistry.Url}/",
+                        string.Empty
+                    );
+
+                    if (string.Equals(currentPath, previousRepositoryPath, StringComparison.OrdinalIgnoreCase) && SelectedRepository != null)
+                    {
+                        if (previousSelectedTag != null)
+                        {
+                            await LoadTagsAsync(SelectedRepository);
+                            var tagToSelect = Tags.FirstOrDefault(t => t.Name == previousSelectedTag.Name);
+                            if (tagToSelect != null)
+                            {
+                                SelectedTag = tagToSelect;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _allTags.Clear();
+                        Tags.Clear();
+                        SelectedTag = null;
+                        SelectedRepository = null;
+                        CurrentManifest = null;
+                        ManifestViewer = null;
+                        ArtifactSizeSummary = string.Empty;
+                        PlatformImageSizes.Clear();
+                        HasPlatformSizes = false;
+                    }
+                }
+                else
+                {
+                    _allTags.Clear();
+                    Tags.Clear();
+                    SelectedTag = null;
+                    SelectedRepository = null;
+                    CurrentManifest = null;
+                    ManifestViewer = null;
+                    ArtifactSizeSummary = string.Empty;
+                    PlatformImageSizes.Clear();
+                    HasPlatformSizes = false;
+                }
+
+                StatusMessage = "Repositories refreshed";
+            }
+            catch (Services.RegistryOperationException regEx)
+            {
+                StatusMessage = regEx.Message;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error refreshing repositories: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
                 IsProgressIndeterminate = false;
                 ProgressValue = 0;
             }
@@ -1161,11 +1276,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                     // Update UI
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        Tags.Clear();
-                        foreach (var tag in tags)
-                        {
-                            Tags.Add(tag);
-                        }
+                        _allTags = tags;
+                        ApplyTagFilter();
                         
                         // Try to find and select the repository in the tree
                         FindAndSelectRepository(repository);
@@ -1374,6 +1486,11 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
+        private void RepositoriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            this.RaisePropertyChanged(nameof(HasRepositories));
+        }
+
         private void ApplyRepositoryFilter()
         {
             var filter = RepositoryFilterText;
@@ -1393,6 +1510,52 @@ namespace OrasProject.OrasDesktop.ViewModels
                 var pruned = PruneRepository(root, trimmed);
                 if (pruned != null)
                     FilteredRepositories.Add(pruned);
+            }
+        }
+
+        private void ApplyTagFilter(string? preferredSelection = null)
+        {
+            var selectionName = preferredSelection ?? SelectedTag?.Name;
+
+            IEnumerable<Tag> source = _allTags;
+            if (!string.IsNullOrWhiteSpace(TagFilterText))
+            {
+                var trimmed = TagFilterText.Trim();
+                source = source.Where(t => t.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var filtered = source.ToList();
+
+            Tags.Clear();
+            foreach (var tag in filtered)
+            {
+                Tags.Add(tag);
+            }
+
+            if (!string.IsNullOrEmpty(selectionName))
+            {
+                var tagToSelect = Tags.FirstOrDefault(t => string.Equals(t.Name, selectionName, StringComparison.Ordinal));
+                if (tagToSelect != null)
+                {
+                    if (!EqualityComparer<Tag?>.Default.Equals(SelectedTag, tagToSelect))
+                    {
+                        SelectedTag = tagToSelect;
+                    }
+                }
+                else if (SelectedTag != null)
+                {
+                    SelectedTag = null;
+                    ManifestContent = string.Empty;
+                    ManifestViewer = null;
+                    Referrers.Clear();
+                }
+            }
+            else if (SelectedTag != null && !Tags.Contains(SelectedTag))
+            {
+                SelectedTag = null;
+                ManifestContent = string.Empty;
+                ManifestViewer = null;
+                Referrers.Clear();
             }
         }
 
@@ -1420,6 +1583,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 FullPath = source.FullPath,
                 Registry = source.Registry,
                 IsLeaf = source.IsLeaf,
+                IsExpanded = source.IsExpanded,
             };
             foreach (var c in prunedChildren)
             {
@@ -1481,6 +1645,16 @@ namespace OrasProject.OrasDesktop.ViewModels
             if (found != null)
             {
                 SelectedRepository = found;
+            }
+        }
+
+        private void ExpandRepositoryAncestors(Repository repository)
+        {
+            var current = repository;
+            while (current != null)
+            {
+                current.IsExpanded = true;
+                current = current.Parent;
             }
         }
         

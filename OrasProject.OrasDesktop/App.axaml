@@ -6,5 +6,28 @@
 
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="Border.ManifestViewer">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+        </Style>
+        <Style Selector="SelectableTextBlock.code-view">
+            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', 'JetBrains Mono', monospace" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style Selector="SelectableTextBlock.code-view:dark">
+            <Setter Property="Foreground" Value="#D4D4D4" />
+        </Style>
+        <Style Selector="TreeView.code-view">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource ThemeForegroundBrush}" />
+            <Setter Property="FontFamily" Value="Consolas, Menlo, 'Cascadia Mono', 'JetBrains Mono', monospace" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="TreeView.code-view:dark">
+            <Setter Property="Foreground" Value="#D4D4D4" />
+        </Style>
     </Application.Styles>
 </Application>
