@@ -14,6 +14,7 @@ using OrasProject.OrasDesktop.Views;
 using ReactiveUI;
 using System.Text.Json;
 using OrasProject.Oras.Registry;
+using OrasProject.Oras.Exceptions;
 
 namespace OrasProject.OrasDesktop.ViewModels
 {
@@ -1181,7 +1182,28 @@ namespace OrasProject.OrasDesktop.ViewModels
             try
             {
                 // Validate and parse the reference using ORAS library
-                if (!Reference.TryParse(originalReference, out var parsedRef) || 
+                Reference? parsedRef = null;
+                try
+                {
+                    if (!Reference.TryParse(originalReference, out parsedRef))
+                    {
+                        StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
+                        return;
+                    }
+                }
+                catch (FormatException ex)
+                {
+                    // Catch InvalidResponseException and other format exceptions from ORAS library
+                    StatusMessage = $"Error parsing reference: {ex.Message}";
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = $"Unexpected error parsing reference: {ex.Message}";
+                    return;
+                }
+                
+                if (parsedRef == null || 
                     string.IsNullOrEmpty(parsedRef.Registry) || 
                     string.IsNullOrEmpty(parsedRef.Repository))
                 {
@@ -1191,8 +1213,13 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 string registry = parsedRef.Registry;
                 string repository = parsedRef.Repository;
-                string tagOrDigest = !string.IsNullOrEmpty(parsedRef.Digest) ? parsedRef.Digest : parsedRef.Tag ?? "latest";
-                bool isDigestReference = !string.IsNullOrEmpty(parsedRef.Digest);
+                
+                // ContentReference can be either a tag or digest
+                // Check if it's a digest by seeing if it starts with a hash algorithm (e.g., "sha256:")
+                string? contentRef = parsedRef.ContentReference;
+                bool isDigestReference = !string.IsNullOrEmpty(contentRef) && contentRef.Contains(':') && 
+                                        (contentRef.StartsWith("sha256:") || contentRef.StartsWith("sha512:"));
+                string tagOrDigest = contentRef ?? "latest";
 
                 // Check if we need to connect to a different registry
                 bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);

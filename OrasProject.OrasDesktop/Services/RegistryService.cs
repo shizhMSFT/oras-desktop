@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -8,10 +9,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using OrasProject.Oras; // for TargetExtensions.CopyAsync
 using OrasProject.Oras.Content;
+using OrasProject.Oras.Exceptions;
 using OrasProject.Oras.Registry.Remote;
 using OrasProject.Oras.Registry.Remote.Auth;
-
-// Reflection no longer needed after using official CopyAsync extension.
 
 namespace OrasProject.OrasDesktop.Services;
 
@@ -71,9 +71,9 @@ public sealed class RegistryService : IRegistryService
             _registry = new Registry(connection.Registry, _client);
             return Task.CompletedTask;
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (HttpRequestException httpEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Initialize registry connection"), respEx);
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Initialize registry connection"), httpEx);
         }
         catch (Exception ex)
         {
@@ -93,18 +93,23 @@ public sealed class RegistryService : IRegistryService
             }
             return results;
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "List repositories"), respEx);
+            throw new RegistryOperationException($"List repositories failed: Registry or repository not found", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "List repositories"), httpEx);
         }
     }
 
-    private string GetUserFriendlyErrorMessage(OrasProject.Oras.Registry.Remote.ResponseException respEx, string operation)
+    private string GetUserFriendlyErrorMessage(HttpRequestException httpEx, string operation)
     {
-        string errorMessage = $"HTTP {respEx.StatusCode}";
+        var statusCode = httpEx.StatusCode ?? HttpStatusCode.InternalServerError;
+        string errorMessage = $"HTTP {(int)statusCode}";
         
         // Add specific error messages based on status code
-        switch (respEx.StatusCode)
+        switch (statusCode)
         {
             case System.Net.HttpStatusCode.Unauthorized:
                 errorMessage = "Unauthorized: Authentication required or credentials invalid";
@@ -145,9 +150,13 @@ public sealed class RegistryService : IRegistryService
             }
             return tags;
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "List tags"), respEx);
+            throw new RegistryOperationException($"List tags failed: Repository '{repository}' not found", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "List tags"), httpEx);
         }
     }
 
@@ -171,9 +180,13 @@ public sealed class RegistryService : IRegistryService
             var digests = ExtractDigests(json);
             return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get manifest"), respEx);
+            throw new RegistryOperationException($"Manifest not found for tag '{tag}' in repository '{repository}'", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Get manifest"), httpEx);
         }
     }
 
@@ -197,9 +210,13 @@ public sealed class RegistryService : IRegistryService
             var digests = ExtractDigests(json);
             return new ManifestResult(descriptor.Digest, descriptor.MediaType, json, digests);
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get manifest"), respEx);
+            throw new RegistryOperationException($"Manifest not found for digest '{digest}' in repository '{repository}'", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Get manifest"), httpEx);
         }
     }
 
@@ -212,35 +229,13 @@ public sealed class RegistryService : IRegistryService
             var desc = await repo.ResolveAsync(digest, ct);
             await repo.DeleteAsync(desc, ct);
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            // Extract meaningful information from the ResponseException
-            string errorMessage = $"HTTP {respEx.StatusCode}";
-            
-            // Add specific error messages based on status code
-            switch (respEx.StatusCode)
-            {
-                case System.Net.HttpStatusCode.Unauthorized:
-                    errorMessage = "Unauthorized: Authentication required or credentials invalid";
-                    break;
-                case System.Net.HttpStatusCode.Forbidden:
-                    errorMessage = "Forbidden: You don't have permission to delete this manifest";
-                    break;
-                case System.Net.HttpStatusCode.NotFound:
-                    errorMessage = "Not Found: The manifest does not exist or has already been deleted";
-                    break;
-                case System.Net.HttpStatusCode.MethodNotAllowed:
-                    errorMessage = "Method Not Allowed: This registry doesn't support deletion";
-                    break;
-                case (System.Net.HttpStatusCode)429:
-                    errorMessage = "Too Many Requests: Please try again later";
-                    break;
-                case System.Net.HttpStatusCode.InternalServerError:
-                    errorMessage = "Internal Server Error: The registry encountered an error";
-                    break;
-            }
-            
-            throw new RegistryOperationException($"Delete failed: {errorMessage}", respEx);
+            throw new RegistryOperationException($"Cannot delete: Manifest '{digest}' not found in repository '{repository}'", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Delete manifest"), httpEx);
         }
     }
 
@@ -259,9 +254,13 @@ public sealed class RegistryService : IRegistryService
             await src.CopyAsync(request.Reference, dst, request.TargetTag ?? string.Empty, ct);
             progress?.Report(new CopyProgress("Completed", 1, 1));
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Copy artifact"), respEx);
+            throw new RegistryOperationException($"Copy failed: Artifact '{request.Reference}' not found in repository '{request.SourceRepository}'", notFoundEx);
+        }
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Copy artifact"), httpEx);
         }
     }
 
@@ -376,11 +375,17 @@ public sealed class RegistryService : IRegistryService
             var top = await FetchDirectAsync(rootDigest);
             return await GroupAndBuildAsync(top);
         }
-        catch (OrasProject.Oras.Registry.Remote.ResponseException respEx)
+        catch (NotFoundException notFoundEx)
         {
-            throw new RegistryOperationException(GetUserFriendlyErrorMessage(respEx, "Get referrers"), respEx);
+            throw new RegistryOperationException($"Get referrers failed: Manifest '{rootDigest}' not found in repository '{repository}'", notFoundEx);
         }
-    }    /// <summary>
+        catch (HttpRequestException httpEx)
+        {
+            throw new RegistryOperationException(GetUserFriendlyErrorMessage(httpEx, "Get referrers"), httpEx);
+        }
+    }    
+    
+    /// <summary>
     /// Extract digests from a manifest JSON string.
     /// </summary>
     internal static IReadOnlyList<string> ExtractDigests(string json)
