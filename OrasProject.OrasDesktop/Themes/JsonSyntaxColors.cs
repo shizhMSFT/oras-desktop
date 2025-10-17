@@ -49,11 +49,11 @@ namespace OrasProject.OrasDesktop.Themes
         /// </summary>
         public static JsonSyntaxColors Dark => new()
         {
-            PropertyBrush = new SolidColorBrush(Color.Parse("#569CD6")), // Light Blue
-            StringBrush = new SolidColorBrush(Color.Parse("#CE9178")), // Light Orange
-            NumberBrush = new SolidColorBrush(Color.Parse("#B5CEA8")), // Light Green
-            BooleanBrush = new SolidColorBrush(Color.Parse("#C586C0")), // Light Purple
-            DefaultBrush = new SolidColorBrush(Color.Parse("#D4D4D4")) // Light Gray
+            PropertyBrush = new SolidColorBrush(Color.Parse("#8DBBFF")), // Softer Blue
+            StringBrush = new SolidColorBrush(Color.Parse("#F0B7A4")), // Soft Coral
+            NumberBrush = new SolidColorBrush(Color.Parse("#CFE5C8")), // Pale Green
+            BooleanBrush = new SolidColorBrush(Color.Parse("#E1C6EC")), // Soft Lavender
+            DefaultBrush = new SolidColorBrush(Color.Parse("#E6E6E6")) // Brighter Gray
         };
     }
 }

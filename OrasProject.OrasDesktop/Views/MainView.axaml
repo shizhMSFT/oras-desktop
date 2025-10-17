@@ -28,7 +28,10 @@
         Grid.Column="0"
         Orientation="Horizontal"
         Spacing="5">
-        <TextBlock VerticalAlignment="Center" Text="Registry:" />
+        <TextBlock
+          VerticalAlignment="Center"
+          FontWeight="Bold"
+          Text="Registry:" />
         <TextBox
           Name="RegistryTextBox"
           Width="250"
@@ -82,7 +85,14 @@
             Background="Transparent"
             BorderThickness="0"
             Command="{Binding RefreshRepositoriesCommand}"
+            IsEnabled="{Binding HasRepositories}"
             ToolTip.Tip="Refresh repository list">
+            <Button.Styles>
+              <Style Selector="Button:disabled">
+                <Setter Property="Opacity" Value="0.35" />
+                <Setter Property="Background" Value="Transparent" />
+              </Style>
+            </Button.Styles>
             <Path
               Width="16"
               Height="16"
@@ -123,7 +133,7 @@
         RowDefinitions="Auto,Auto,*">
         <StackPanel
           Grid.Row="0"
-          Margin="0,0,0,5"
+          Margin="0,0,0,2"
           Orientation="Horizontal"
           Spacing="4"
           VerticalAlignment="Center">
@@ -147,6 +157,11 @@
               Stretch="Uniform" />
           </Button>
         </StackPanel>
+        <TextBox
+          Grid.Row="1"
+          Margin="0,0,0,3"
+          Watermark="Filter tags..."
+          Text="{Binding TagFilterText}" />
         <ListBox
           Grid.Row="2"
           ItemsSource="{Binding Tags}"
@@ -245,28 +260,90 @@
         </StackPanel>
         
         <!-- TabControl for Manifest and Referrers -->
-        <TabControl Grid.Row="5">
+        <TabControl
+          Grid.Row="5"
+          x:Name="ManifestTabs"
+          Background="Transparent"
+          BorderThickness="0">
+          <TabControl.Styles>
+            <Style Selector="#ManifestTabs > TabItem">
+              <Setter Property="Padding" Value="16,6" />
+              <Setter Property="Margin" Value="0,0,12,0" />
+              <Setter Property="Background" Value="Transparent" />
+              <Setter Property="BorderBrush" Value="Transparent" />
+              <Setter Property="BorderThickness" Value="0" />
+              <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumHighBrush}" />
+              <Setter Property="FontSize" Value="14" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="TabItem">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                      <StackPanel>
+                        <ContentPresenter
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center"
+                          Content="{TemplateBinding Header}"
+                          Foreground="{TemplateBinding Foreground}" />
+                        <Border
+                          x:Name="Underline"
+                          Margin="0,6,0,0"
+                          Height="2"
+                          Background="Transparent"
+                          CornerRadius="1" />
+                      </StackPanel>
+                    </Border>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+            <Style Selector="#ManifestTabs > TabItem:pointerover">
+              <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+              <Setter Property="Background" Value="Transparent" />
+            </Style>
+            <Style Selector="#ManifestTabs > TabItem:selected">
+              <Setter Property="BorderBrush" Value="Transparent" />
+              <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+              <Setter Property="Background" Value="Transparent" />
+              <Setter Property="FontWeight" Value="Bold" />
+            </Style>
+            <Style Selector="#ManifestTabs > TabItem:pointerover /template/ Border#Underline" x:SetterTargetType="Border">
+              <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseMediumHighBrush}" />
+              <Setter Property="Opacity" Value="0.45" />
+            </Style>
+            <Style Selector="#ManifestTabs > TabItem:selected /template/ Border#Underline" x:SetterTargetType="Border">
+              <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+              <Setter Property="Opacity" Value="1" />
+            </Style>
+          </TabControl.Styles>
           <TabItem Header="Manifest">
             <Border
-              BorderBrush="LightGray"
-              BorderThickness="1">
+              Classes="ManifestViewer"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="8">
               <ScrollViewer
+                Background="Transparent"
                 HorizontalScrollBarVisibility="Auto"
                 VerticalScrollBarVisibility="Auto">
                 <ContentControl
                   Content="{Binding ManifestViewer}"
+                  Padding="4"
                   Background="Transparent"
-                  FontFamily="Consolas" />
+                  FontFamily="Consolas"
+                  Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
               </ScrollViewer>
             </Border>
           </TabItem>
           <TabItem Header="Referrers">
             <Border
-              BorderBrush="LightGray"
+              Classes="ManifestViewer"
               BorderThickness="1"
+              CornerRadius="6"
+              Padding="8"
               MinHeight="120">
               <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <TreeView ItemsSource="{Binding Referrers}">
+                  <TreeView ItemsSource="{Binding Referrers}" Classes="code-view">
                   <TreeView.ItemTemplate>
                     <TreeDataTemplate ItemsSource="{Binding Children}">
                       <StackPanel Orientation="Horizontal" Spacing="4">
@@ -285,11 +362,9 @@
     <!--  Reference panel with search and copy functionality  -->
     <Border
       Grid.Row="2"
-      Margin="10,0,10,5"
-      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-      BorderThickness="1"
-      CornerRadius="4"
-      Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+      Margin="0"
+      BorderThickness="0"
+      Background="{DynamicResource SystemControlBackgroundChromeHighBrush}">
       <Grid 
         Margin="8,6"
         ColumnDefinitions="Auto,*,Auto,Auto">
@@ -315,13 +390,15 @@
         <TextBox
           Grid.Column="1"
           Margin="8,0,0,0"
-          Padding="8,8"
+          Height="30"
+          Padding="12,0,12,0"
           VerticalAlignment="Center"
+          VerticalContentAlignment="Center"
           Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
           BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
           BorderThickness="1"
           CornerRadius="3"
-          FontFamily="Consolas"
+          FontFamily="Cascadia Code,JetBrains Mono,Menlo,Consolas,Liberation Mono"
           FontSize="13"
           Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
           Watermark="Enter registry/repository:tag or @digest..."

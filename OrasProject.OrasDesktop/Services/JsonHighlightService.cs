@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Avalonia.Controls;
-using Avalonia.Media;
 using Avalonia.Controls.Documents;
+using Avalonia.Media;
+using Avalonia.Styling;
 using OrasProject.OrasDesktop.Themes;
 
 namespace OrasProject.OrasDesktop.Services
@@ -39,6 +40,7 @@ namespace OrasProject.OrasDesktop.Services
             var colors = _themeService.GetJsonSyntaxColors();
             
             var textBlock = new SelectableTextBlock();
+            textBlock.Classes.Add("code-view");
             var inlineCollection = new InlineCollection();
             textBlock.Inlines = inlineCollection;
 
