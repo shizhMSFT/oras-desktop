@@ -100,11 +100,13 @@
             </StackPanel>
             <TextBox
               Grid.Row="1"
+              Name="RepositoryFilterTextBox"
               Watermark="Filter repositories (use * for wildcards)..."
               Text="{Binding RepositoryFilterText}"
               ToolTip.Tip="Filter repositories by name or path. Examples: bicep* (starts with), *packages* (contains), bicep/ai* (path match)" />
             <TreeView
               Grid.Row="2"
+              Name="RepositoriesTreeView"
               ItemsSource="{Binding FilteredRepositories}"
               SelectedItem="{Binding SelectedRepository}">
               <TreeView.Styles>
@@ -157,12 +159,14 @@
             </StackPanel>
             <TextBox
               Grid.Row="1"
+              Name="TagFilterTextBox"
               Margin="0,0,0,3"
               Watermark="Filter tags (use * for wildcards)..."
               Text="{Binding TagFilterText}"
               ToolTip.Tip="Filter tags by name. Examples: v1.* (version prefix), *-alpha (suffix match), *rc* (contains)" />
             <ListBox
               Grid.Row="2"
+              Name="TagsListBox"
               ItemsSource="{Binding Tags}"
               SelectedItem="{Binding SelectedTag}">
               <ListBox.ItemTemplate>
@@ -305,17 +309,20 @@
                   </Grid>
                   
                   <!-- Size Summary -->
-                  <StackPanel Margin="0,0,0,10" Orientation="Horizontal" Spacing="10"
-                              IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <Grid Margin="0,0,0,10" ColumnDefinitions="Auto,*"
+                        IsVisible="{Binding ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                     <TextBlock
+                      Grid.Column="0"
                       Classes="artifact-label"
                       Text="Image size:"
-                      VerticalAlignment="Center" />
+                      VerticalAlignment="Center"
+                      Margin="0,0,10,0" />
                     <TextBlock
+                      Grid.Column="1"
                       Classes="artifact-value"
                       Text="{Binding ArtifactSizeSummary}"
                       VerticalAlignment="Center" />
-                  </StackPanel>
+                  </Grid>
 
                   <!-- Platform Image Sizes -->
                   <Grid Margin="0,0,0,10" IsVisible="{Binding HasPlatformSizes}">

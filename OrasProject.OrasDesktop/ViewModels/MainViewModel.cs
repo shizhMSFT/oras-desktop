@@ -22,6 +22,9 @@ namespace OrasProject.OrasDesktop.ViewModels
         private readonly IRegistryService _registryService;
         private readonly JsonHighlightService _jsonHighlightService;
 
+        // Events
+        public event EventHandler? RegistryConnected;
+
         // Properties
         private string _registryUrl = "mcr.microsoft.com";
         private ObservableCollection<Repository> _repositories =
@@ -49,6 +52,11 @@ namespace OrasProject.OrasDesktop.ViewModels
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
         private DigestContextMenuViewModel _digestContextMenu = new();
+        
+        // Debounced selection timers
+        private System.Threading.Timer? _repositorySelectionTimer;
+        private System.Threading.Timer? _tagSelectionTimer;
+        private const int SelectionDebounceMilliseconds = 500; // Wait 500ms before loading
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -82,31 +90,95 @@ namespace OrasProject.OrasDesktop.ViewModels
             LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
 
-            // Setup property change handlers
+            // Setup property change handlers with debouncing
             this.WhenAnyValue(x => x.SelectedRepository)
                 .WhereNotNull()
-                .Subscribe(async repo => await LoadTagsAsync(repo));
+                .Subscribe(repo => ScheduleRepositoryLoad(repo));
 
             this.WhenAnyValue(x => x.SelectedTag)
                 .WhereNotNull()
-                .Subscribe(async tag =>
-                {
-                    SelectedTagReference = tag.FullReference;
-                    Referrers.Clear();
-                    ReferrersLoading = false;
-                    // Reset progress bar to default state
-                    ProgressValue = 0;
-                    // Clear size information
-                    ArtifactSizeSummary = string.Empty;
-                    PlatformImageSizes.Clear();
-                    HasPlatformSizes = false;
-                    await LoadManifestAsync(tag);
-                });
+                .Subscribe(tag => ScheduleTagLoad(tag));
 
             // Auth type observer removed as the UI component was removed
 
             _repositories.CollectionChanged += RepositoriesCollectionChanged;
             this.RaisePropertyChanged(nameof(HasRepositories));
+        }
+
+        // Debounced selection methods
+        private void ScheduleRepositoryLoad(Repository repository)
+        {
+            // Cancel any pending timer
+            _repositorySelectionTimer?.Dispose();
+            
+            // Create new timer that will fire after the debounce period
+            _repositorySelectionTimer = new System.Threading.Timer(
+                _ =>
+                {
+                    // Marshal back to UI thread
+                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    {
+                        await LoadTagsAsync(repository);
+                    });
+                },
+                null,
+                SelectionDebounceMilliseconds,
+                System.Threading.Timeout.Infinite
+            );
+        }
+
+        private void ScheduleTagLoad(Tag tag)
+        {
+            // Update UI immediately (no network call)
+            SelectedTagReference = tag.FullReference;
+            Referrers.Clear();
+            ReferrersLoading = false;
+            ProgressValue = 0;
+            ArtifactSizeSummary = string.Empty;
+            PlatformImageSizes.Clear();
+            HasPlatformSizes = false;
+            
+            // Cancel any pending timer
+            _tagSelectionTimer?.Dispose();
+            
+            // Create new timer that will fire after the debounce period
+            _tagSelectionTimer = new System.Threading.Timer(
+                _ =>
+                {
+                    // Marshal back to UI thread
+                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    {
+                        await LoadManifestAsync(tag);
+                    });
+                },
+                null,
+                SelectionDebounceMilliseconds,
+                System.Threading.Timeout.Infinite
+            );
+        }
+
+        /// <summary>
+        /// Forces immediate loading of tags for the selected repository (called when Enter is pressed)
+        /// </summary>
+        public void ForceLoadSelectedRepository()
+        {
+            _repositorySelectionTimer?.Dispose();
+            if (SelectedRepository != null)
+            {
+                _ = LoadTagsAsync(SelectedRepository);
+            }
+        }
+
+        /// <summary>
+        /// Forces immediate loading of manifest for the selected tag (called when Enter is pressed)
+        /// </summary>
+        public void ForceLoadSelectedTag()
+        {
+            _tagSelectionTimer?.Dispose();
+            if (SelectedTag != null)
+            {
+                _ = LoadManifestAsync(SelectedTag);
+            }
         }
 
         // Property accessors
@@ -477,6 +549,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     }
                     ApplyRepositoryFilter();
                     StatusMessage = "Connected to registry (authenticated)";
+                    RegistryConnected?.Invoke(this, EventArgs.Empty);
                     return;
                 }
 
@@ -497,6 +570,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         }
                         ApplyRepositoryFilter();
                         StatusMessage = "Connected to registry (anonymous)";
+                        RegistryConnected?.Invoke(this, EventArgs.Empty);
                     }
                 }
                 catch (Exception)
@@ -568,6 +642,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     }
                     ApplyRepositoryFilter();
                     StatusMessage = "Connected to registry (authenticated)";
+                    RegistryConnected?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Services.RegistryOperationException regEx)
@@ -1745,9 +1820,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                             if (matchingTag != null && SelectedTag != matchingTag)
                             {
                                 // Select the matching tag without triggering a reload
-                                // (since we just loaded the manifest)
+                                // Cancel any pending debounced load timer first
+                                _tagSelectionTimer?.Dispose();
+                                
                                 _selectedTag = matchingTag;
                                 this.RaisePropertyChanged(nameof(SelectedTag));
+                                
+                                // Cancel the timer again in case RaisePropertyChanged triggered it
+                                _tagSelectionTimer?.Dispose();
                             }
                         }
                     }
