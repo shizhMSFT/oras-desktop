@@ -43,15 +43,15 @@ namespace OrasProject.OrasDesktop.ViewModels
         private double _progressValue;
         private bool _isProgressIndeterminate;
         private string _repositoryFilterText = string.Empty;
-    private string _tagFilterText = string.Empty;
+        private string _tagFilterText = string.Empty;
         private string _artifactSizeSummary = string.Empty;
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
-    public ReactiveCommand<Unit, Unit> RefreshRepositoriesCommand { get; }
-    public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
+        public ReactiveCommand<Unit, Unit> RefreshRepositoriesCommand { get; }
+        public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
@@ -190,7 +190,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (this.RaiseAndSetIfChanged(ref _isBusy, value))
                 {
                     this.RaisePropertyChanged(nameof(CanModifySelectedTag));
-                    
+                    this.RaisePropertyChanged(nameof(IsProgressVisible));
+
                     // If we're setting busy to true, make the progress bar indeterminate
                     // unless we're specifically loading referrers
                     if (value && !ReferrersLoading)
@@ -224,8 +225,8 @@ namespace OrasProject.OrasDesktop.ViewModels
         public bool ReferrersLoading
         {
             get => _referrersLoading;
-            set 
-            { 
+            set
+            {
                 if (this.RaiseAndSetIfChanged(ref _referrersLoading, value))
                 {
                     // When referrer loading starts, set determinate progress mode
@@ -237,8 +238,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     // When referrer loading ends, reset progress if not busy with something else
                     else if (!IsBusy)
                     {
-                        IsProgressIndeterminate = false;
-                        ProgressValue = 0;
+                        ResetProgressIndicators();
                     }
                 }
             }
@@ -247,13 +247,39 @@ namespace OrasProject.OrasDesktop.ViewModels
         public double ProgressValue
         {
             get => _progressValue;
-            set => this.RaiseAndSetIfChanged(ref _progressValue, value);
+            set
+            {
+                if (!EqualityComparer<double>.Default.Equals(_progressValue, value))
+                {
+                    this.RaiseAndSetIfChanged(ref _progressValue, value);
+                    this.RaisePropertyChanged(nameof(IsProgressVisible));
+                }
+            }
         }
 
         public bool IsProgressIndeterminate
         {
             get => _isProgressIndeterminate;
-            set => this.RaiseAndSetIfChanged(ref _isProgressIndeterminate, value);
+            set
+            {
+                if (this.RaiseAndSetIfChanged(ref _isProgressIndeterminate, value))
+                {
+                    this.RaisePropertyChanged(nameof(IsProgressVisible));
+                }
+            }
+        }
+
+        public bool IsProgressVisible => IsBusy && (IsProgressIndeterminate || ProgressValue > 0);
+
+        private void ResetProgressIndicators(bool clearValues = true)
+        {
+            if (clearValues)
+            {
+                IsProgressIndeterminate = false;
+                ProgressValue = 0;
+            }
+
+            this.RaisePropertyChanged(nameof(IsProgressVisible));
         }
 
         public string RepositoryFilterText
@@ -299,7 +325,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             get => _hasPlatformSizes;
             set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
         }
-        
+
         public Manifest? CurrentManifest
         {
             get => _currentManifest;
@@ -329,7 +355,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             await ConnectToRegistryAsync(false);
         }
-        
+
         private async Task ConnectToRegistryAsync(bool forceLogin)
         {
             IsBusy = true;
@@ -342,7 +368,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 var originalUsername = _currentRegistry.Username;
                 var originalPassword = _currentRegistry.Password;
                 var originalToken = _currentRegistry.Token;
-                
+
                 _currentRegistry.Url = RegistryUrl;
 
                 // Initialize with anonymous auth first
@@ -374,13 +400,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                     if (!result.Result)
                     {
                         StatusMessage = "Authentication cancelled";
-                        
+
                         // Restore original credentials
                         _currentRegistry.AuthenticationType = originalAuthType;
                         _currentRegistry.Username = originalUsername;
                         _currentRegistry.Password = originalPassword;
                         _currentRegistry.Token = originalToken;
-                        
+
                         // Reinitialize with original credentials
                         await _registryService.InitializeAsync(
                             new RegistryConnection(
@@ -398,10 +424,10 @@ namespace OrasProject.OrasDesktop.ViewModels
                             ),
                             default
                         );
-                        
+
                         return;
                     }
-                    
+
                     // Update registry with authentication information
                     _currentRegistry.AuthenticationType = result.AuthType;
                     _currentRegistry.Username = result.Username;
@@ -438,13 +464,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                     StatusMessage = "Connected to registry (authenticated)";
                     return;
                 }
-                
+
                 try
                 {
                     // Try to connect anonymously first
                     var repos = await _registryService.ListRepositoriesAsync(default);
                     var connected = repos.Count >= 0; // if call returns without exception treat as connected
-                    
+
                     if (connected)
                     {
                         // Anonymous connection successful, load repositories
@@ -465,13 +491,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                     if (!result.Result)
                     {
                         StatusMessage = "Authentication cancelled";
-                        
+
                         // Restore original credentials
                         _currentRegistry.AuthenticationType = originalAuthType;
                         _currentRegistry.Username = originalUsername;
                         _currentRegistry.Password = originalPassword;
                         _currentRegistry.Token = originalToken;
-                        
+
                         // Reinitialize with original credentials
                         await _registryService.InitializeAsync(
                             new RegistryConnection(
@@ -489,7 +515,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                             ),
                             default
                         );
-                        
+
                         return;
                     }
 
@@ -540,9 +566,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Explicitly reset progress state after connection is complete
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
+                ResetProgressIndicators();
             }
         }
 
@@ -601,9 +625,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Reset progress indicators
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
+                ResetProgressIndicators();
             }
         }
 
@@ -690,8 +712,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
+                ResetProgressIndicators();
             }
         }
 
@@ -735,7 +756,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
                 ManifestContent = CurrentManifest.RawContent;
-                
+
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
@@ -764,11 +785,13 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Reset progress indicators for manifest loading
-                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                if (!ReferrersLoading)
                 {
-                    IsProgressIndeterminate = false;
-                    ProgressValue = 0;
+                    ResetProgressIndicators();
+                }
+                else
+                {
+                    ResetProgressIndicators(clearValues: false);
                 }
             }
         }
@@ -783,17 +806,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Reset previous data
                 PlatformImageSizes.Clear();
                 HasPlatformSizes = false;
-                
+
                 // Calculate new size information
                 var (summary, platformSizes, hasPlatforms) = await ArtifactSizeCalculator.AnalyzeManifestSizeAsync(
-                    _registryService, 
+                    _registryService,
                     repositoryPath,
-                    manifest, 
+                    manifest,
                     default);
-                    
+
                 // Update UI
                 ArtifactSizeSummary = summary;
-                
+
                 if (hasPlatforms && platformSizes.Count > 0)
                 {
                     // Sort platforms alphabetically
@@ -828,7 +851,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     {
                         ProgressValue = 0;
                     }
-                    else 
+                    else
                     {
                         // Once we start getting counts, update the progress
                         // We don't know the total in advance, so we'll use a fixed scale up to 100
@@ -871,8 +894,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Reset progress bar state if no other operation is busy
                 if (!IsBusy)
                 {
-                    IsProgressIndeterminate = false;
-                    ProgressValue = 0;
+                    ResetProgressIndicators();
+                }
+                else
+                {
+                    ResetProgressIndicators(clearValues: false);
                 }
             }
         }
@@ -976,7 +1002,7 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             IsBusy = true;
             StatusMessage = $"Deleting manifest for {SelectedTag.Name}...";
-            
+
             // Store the tag name before deletion to use in status message later
             string tagName = SelectedTag.Name;
 
@@ -1010,9 +1036,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Reset progress indicators
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
+                ResetProgressIndicators();
             }
         }
 
@@ -1062,14 +1086,14 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 // Parse the reference string: <registry>/<repository>:<tag>
                 string reference = SelectedTagReference.Trim();
-                
+
                 // First, check if it's a digest reference (ends with @sha256:...)
                 bool isDigestReference = reference.Contains("@sha256:");
-                
+
                 // Check if it's a valid reference format
                 string fullRepository;
                 string tagOrDigest;
-                
+
                 if (isDigestReference)
                 {
                     // Handle digest format: <registry>/<repository>@sha256:digest
@@ -1079,7 +1103,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         StatusMessage = "Invalid reference format";
                         return;
                     }
-                    
+
                     fullRepository = reference.Substring(0, atIndex);
                     tagOrDigest = reference.Substring(atIndex + 1); // Include sha256: prefix
                 }
@@ -1092,15 +1116,15 @@ namespace OrasProject.OrasDesktop.ViewModels
                         StatusMessage = "Invalid reference format";
                         return;
                     }
-                    
+
                     fullRepository = reference.Substring(0, colonIndex);
                     tagOrDigest = reference.Substring(colonIndex + 1);
                 }
-                
+
                 // Extract registry and repository parts
                 string registry;
                 string repository;
-                
+
                 // Find the first slash that separates registry from repository
                 int firstSlashIndex = fullRepository.IndexOf('/');
                 if (firstSlashIndex <= 0)
@@ -1108,21 +1132,21 @@ namespace OrasProject.OrasDesktop.ViewModels
                     StatusMessage = "Invalid reference format - missing registry or repository path";
                     return;
                 }
-                
+
                 registry = fullRepository.Substring(0, firstSlashIndex);
                 repository = fullRepository.Substring(firstSlashIndex + 1);
-                
+
                 // Check if we need to connect to a different registry
                 bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);
-                
+
                 if (needToChangeRegistry)
                 {
                     // Update the registry URL
                     RegistryUrl = registry;
-                    
+
                     // Connect to the new registry
                     StatusMessage = $"Connecting to registry {registry}...";
-                    
+
                     // Initialize with anonymous auth first
                     _currentRegistry.Url = registry;
                     _currentRegistry.AuthenticationType = AuthenticationType.None;
@@ -1140,14 +1164,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                             ),
                             default
                         );
-                        
+
                         // Try to anonymously connect
                         try
                         {
                             var repos = await _registryService.ListRepositoriesAsync(default);
                             // Anonymous connection successful, load repositories
                             var repositories = await BuildRepositoryTreeAsync();
-                            
+
                             // Update the UI
                             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                             {
@@ -1158,7 +1182,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 }
                                 ApplyRepositoryFilter();
                             });
-                            
+
                             StatusMessage = $"Connected to registry {registry} (anonymous)";
                         }
                         catch (Exception)
@@ -1170,7 +1194,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 StatusMessage = "Failed to get main window";
                                 return;
                             }
-                            
+
                             var result = await LoginDialog.ShowDialog(mainWindow, registry);
                             if (!result.Result)
                             {
@@ -1207,7 +1231,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 // Get repositories with authentication
                                 var repos = await _registryService.ListRepositoriesAsync(default);
                                 var repositories = await BuildRepositoryTreeAsync();
-                                
+
                                 // Update the UI
                                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                                 {
@@ -1218,7 +1242,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     }
                                     ApplyRepositoryFilter();
                                 });
-                                
+
                                 StatusMessage = $"Connected to registry {registry} (authenticated)";
                             }
                             catch (Exception ex)
@@ -1239,16 +1263,16 @@ namespace OrasProject.OrasDesktop.ViewModels
                         return;
                     }
                 }
-                
+
                 // Now fetch tags for the repository if possible
                 try
                 {
                     StatusMessage = $"Loading tags for repository {repository}...";
                     var tagNames = await _registryService.ListTagsAsync(repository, default);
-                    
+
                     // Create a tag collection
                     var tags = new List<Tag>();
-                    
+
                     // Create a dummy repository to hold the tags
                     var dummyRepo = new Repository
                     {
@@ -1257,7 +1281,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         Registry = _currentRegistry,
                         IsLeaf = true
                     };
-                    
+
                     foreach (var name in tagNames)
                     {
                         tags.Add(
@@ -1269,32 +1293,32 @@ namespace OrasProject.OrasDesktop.ViewModels
                             }
                         );
                     }
-                    
+
                     // Sort tags by name
                     tags.Sort();
-                    
+
                     // Update UI
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         _allTags = tags;
                         ApplyTagFilter();
-                        
+
                         // Try to find and select the repository in the tree
                         FindAndSelectRepository(repository);
                     });
-                    
+
                     StatusMessage = $"Loaded {tags.Count} tags for {repository}";
                 }
                 catch (Exception ex)
                 {
                     StatusMessage = $"Error loading tags for {repository}: {ex.Message}";
                 }
-                
+
                 // Now load the manifest
                 StatusMessage = $"Loading manifest for {reference}...";
-                
+
                 ManifestResult manifest;
-                
+
                 if (isDigestReference)
                 {
                     manifest = await _registryService.GetManifestByDigestAsync(
@@ -1320,20 +1344,20 @@ namespace OrasProject.OrasDesktop.ViewModels
                     // Tag will be null since we're not selecting from a repository/tag list
                     MediaType = manifest.MediaType,
                 };
-                
+
                 ManifestContent = CurrentManifest.RawContent;
-                
+
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
-                
+
                 // Calculate artifact size information
                 await CalculateArtifactSizeAsync(repository, manifest);
-                
+
                 // Load referrers
                 ProgressValue = 0;
                 IsProgressIndeterminate = false;
                 _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
-                
+
                 StatusMessage = $"Loaded manifest for {reference}";
             }
             catch (Exception ex)
@@ -1345,15 +1369,17 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Reset progress indicators for manifest loading
-                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                if (!ReferrersLoading)
                 {
-                    IsProgressIndeterminate = false;
-                    ProgressValue = 0;
+                    ResetProgressIndicators();
+                }
+                else
+                {
+                    ResetProgressIndicators(clearValues: false);
                 }
             }
         }
-        
+
         /// <summary>
         /// Loads and displays the manifest for a specific platform
         /// </summary>
@@ -1374,14 +1400,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                     $"{_currentRegistry.Url}/",
                     string.Empty
                 );
-                
+
                 // Get the manifest for this specific platform
                 var manifest = await _registryService.GetManifestByDigestAsync(
                     repoPath,
                     platformSize.Digest,
                     default
                 );
-                
+
                 // Update the current manifest
                 CurrentManifest = new Manifest
                 {
@@ -1390,12 +1416,12 @@ namespace OrasProject.OrasDesktop.ViewModels
                     Tag = SelectedTag,
                     MediaType = manifest.MediaType,
                 };
-                
+
                 ManifestContent = CurrentManifest.RawContent;
-                
+
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
-                
+
                 // Update the selected tag reference to use the digest of the platform-specific manifest
                 if (SelectedTag != null)
                 {
@@ -1417,11 +1443,13 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 IsBusy = false;
-                // Reset progress indicators for manifest loading
-                if (!ReferrersLoading) // Don't reset if referrers are still loading
+                if (!ReferrersLoading)
                 {
-                    IsProgressIndeterminate = false;
-                    ProgressValue = 0;
+                    ResetProgressIndicators();
+                }
+                else
+                {
+                    ResetProgressIndicators(clearValues: false);
                 }
             }
         }
@@ -1465,17 +1493,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                     parent = repo;
                 }
             }
-            
+
             // Sort all repositories recursively
             SortRepositoriesRecursively(root);
             return root;
         }
-        
+
         private void SortRepositoriesRecursively(List<Repository> repositories)
         {
             // Sort the current level using IComparable implementation
             repositories.Sort();
-            
+
             // Recursively sort all children
             foreach (var repo in repositories)
             {
@@ -1592,17 +1620,17 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
             return clone;
         }
-        
+
         private void FindAndSelectRepository(string repositoryPath)
         {
             // Split the repository path by slashes
             var segments = repositoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length == 0)
                 return;
-                
+
             // Try to find the repository in the tree
             Repository? found = null;
-            
+
             // First try to find an exact match by checking full paths
             foreach (var repo in Repositories)
             {
@@ -1612,19 +1640,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                     found = repo;
                     break;
                 }
-                
+
                 // Recursively search in children
                 found = FindRepositoryByPath(repo, repositoryPath);
                 if (found != null)
                     break;
             }
-            
+
             // If not found, try to find a match by name segments
             if (found == null)
             {
                 // Try to find the repository by looking for the last segment
                 string lastSegment = segments[segments.Length - 1];
-                
+
                 // Look in all repositories for a match on the last segment
                 foreach (var repo in Repositories)
                 {
@@ -1633,14 +1661,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                         found = repo;
                         break;
                     }
-                    
+
                     // Recursively search in children
                     found = FindRepositoryByName(repo, lastSegment);
                     if (found != null)
                         break;
                 }
             }
-            
+
             // If found, select it
             if (found != null)
             {
@@ -1657,14 +1685,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                 current = current.Parent;
             }
         }
-        
+
         private Repository? FindRepositoryByPath(Repository parent, string path)
         {
             // Check if this repository matches
             string repoFullPath = parent.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
             if (string.Equals(repoFullPath, path, StringComparison.OrdinalIgnoreCase))
                 return parent;
-                
+
             // Check children
             foreach (var child in parent.Children)
             {
@@ -1672,16 +1700,16 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (found != null)
                     return found;
             }
-            
+
             return null;
         }
-        
+
         private Repository? FindRepositoryByName(Repository parent, string name)
         {
             // Check if this repository matches
             if (string.Equals(parent.Name, name, StringComparison.OrdinalIgnoreCase))
                 return parent;
-                
+
             // Check children
             foreach (var child in parent.Children)
             {
@@ -1689,7 +1717,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (found != null)
                     return found;
             }
-            
+
             return null;
         }
     }

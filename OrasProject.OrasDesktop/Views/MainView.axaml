@@ -469,7 +469,8 @@
           Margin="0,0,10,0"
           Value="{Binding ProgressValue}"
           Maximum="100"
-          IsIndeterminate="{Binding IsProgressIndeterminate}" />
+          IsIndeterminate="{Binding IsProgressIndeterminate}"
+          IsVisible="{Binding IsProgressVisible}" />
       </Grid>
     </Border>
   </Grid>
