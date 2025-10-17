@@ -13,6 +13,7 @@ using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
 using ReactiveUI;
 using System.Text.Json;
+using OrasProject.Oras.Registry;
 
 namespace OrasProject.OrasDesktop.ViewModels
 {
@@ -1099,61 +1100,24 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             IsBusy = true;
-            StatusMessage = $"Processing reference {SelectedTagReference}...";
+            string originalReference = SelectedTagReference.Trim();
+            StatusMessage = $"Processing reference {originalReference}...";
 
             try
             {
-                // Parse the reference string: <registry>/<repository>:<tag>
-                string reference = SelectedTagReference.Trim();
-
-                // First, check if it's a digest reference (ends with @sha256:...)
-                bool isDigestReference = reference.Contains("@sha256:");
-
-                // Check if it's a valid reference format
-                string fullRepository;
-                string tagOrDigest;
-
-                if (isDigestReference)
+                // Validate and parse the reference using ORAS library
+                if (!Reference.TryParse(originalReference, out var parsedRef) || 
+                    string.IsNullOrEmpty(parsedRef.Registry) || 
+                    string.IsNullOrEmpty(parsedRef.Repository))
                 {
-                    // Handle digest format: <registry>/<repository>@sha256:digest
-                    int atIndex = reference.LastIndexOf('@');
-                    if (atIndex <= 0)
-                    {
-                        StatusMessage = "Invalid reference format";
-                        return;
-                    }
-
-                    fullRepository = reference.Substring(0, atIndex);
-                    tagOrDigest = reference.Substring(atIndex + 1); // Include sha256: prefix
-                }
-                else
-                {
-                    // Handle tag format: <registry>/<repository>:<tag>
-                    int colonIndex = reference.LastIndexOf(':');
-                    if (colonIndex <= 0)
-                    {
-                        StatusMessage = "Invalid reference format";
-                        return;
-                    }
-
-                    fullRepository = reference.Substring(0, colonIndex);
-                    tagOrDigest = reference.Substring(colonIndex + 1);
-                }
-
-                // Extract registry and repository parts
-                string registry;
-                string repository;
-
-                // Find the first slash that separates registry from repository
-                int firstSlashIndex = fullRepository.IndexOf('/');
-                if (firstSlashIndex <= 0)
-                {
-                    StatusMessage = "Invalid reference format - missing registry or repository path";
+                    StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
                     return;
                 }
 
-                registry = fullRepository.Substring(0, firstSlashIndex);
-                repository = fullRepository.Substring(firstSlashIndex + 1);
+                string registry = parsedRef.Registry;
+                string repository = parsedRef.Repository;
+                string tagOrDigest = !string.IsNullOrEmpty(parsedRef.Digest) ? parsedRef.Digest : parsedRef.Tag ?? "latest";
+                bool isDigestReference = !string.IsNullOrEmpty(parsedRef.Digest);
 
                 // Check if we need to connect to a different registry
                 bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);
@@ -1334,7 +1298,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 }
 
                 // Now load the manifest
-                StatusMessage = $"Loading manifest for {reference}...";
+                StatusMessage = $"Loading manifest for {originalReference}...";
 
                 ManifestResult manifest;
 
@@ -1382,7 +1346,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                 IsProgressIndeterminate = false;
                 _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
 
-                StatusMessage = $"Loaded manifest for {reference}";
+                // IMPORTANT: Preserve the original pasted reference instead of resetting it
+                SelectedTagReference = originalReference;
+
+                // Try to find and select the matching tag in the UI if it exists
+                await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
+
+                StatusMessage = $"Loaded manifest for {originalReference}";
             }
             catch (Exception ex)
             {
@@ -1731,6 +1701,53 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Tries to find and select a matching tag in the tag list after loading a manifest by reference.
+        /// This ensures the UI stays in sync when a fully qualified reference is pasted.
+        /// </summary>
+        private async Task TrySelectMatchingTag(string repository, string tagOrDigest, bool isDigestReference)
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // If we have tags loaded and they match this repository
+                if (_allTags.Count > 0 && SelectedRepository != null)
+                {
+                    string currentRepoPath = SelectedRepository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
+                    
+                    if (string.Equals(currentRepoPath, repository, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Try to find the matching tag
+                        Tag? matchingTag = null;
+
+                        if (isDigestReference)
+                        {
+                            // For digest references, we can't easily match to a tag name
+                            // But we can check if any tag has the same digest (if we have that info)
+                            // For now, just keep the current selection or clear it
+                            if (SelectedTag != null && !string.Equals(SelectedTag.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Don't clear selection, just let it stay as-is since digest might match
+                            }
+                        }
+                        else
+                        {
+                            // For tag references, find exact match
+                            matchingTag = _allTags.FirstOrDefault(t => 
+                                string.Equals(t.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase));
+
+                            if (matchingTag != null && SelectedTag != matchingTag)
+                            {
+                                // Select the matching tag without triggering a reload
+                                // (since we just loaded the manifest)
+                                _selectedTag = matchingTag;
+                                this.RaisePropertyChanged(nameof(SelectedTag));
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         private Repository? FindRepositoryByName(Repository parent, string name)
