@@ -53,6 +53,8 @@ namespace OrasProject.OrasDesktop.ViewModels
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
         private DigestContextMenuViewModel _digestContextMenu = new();
+        private TagContextMenuViewModel _tagContextMenu = new();
+        private RepositoryContextMenuViewModel _repositoryContextMenu = new();
         
         // Debounced selection timers
         private System.Threading.Timer? _repositorySelectionTimer;
@@ -76,6 +78,20 @@ namespace OrasProject.OrasDesktop.ViewModels
 
             // Setup digest context menu with clipboard access
             _digestContextMenu.SetTopLevelProvider(() =>
+            {
+                var window = GetMainWindow();
+                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
+            });
+
+            // Setup tag context menu with clipboard access
+            _tagContextMenu.SetTopLevelProvider(() =>
+            {
+                var window = GetMainWindow();
+                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
+            });
+
+            // Setup repository context menu with clipboard access
+            _repositoryContextMenu.SetTopLevelProvider(() =>
             {
                 var window = GetMainWindow();
                 return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
@@ -229,6 +245,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (value != null)
                 {
                     ExpandRepositoryAncestors(value);
+                    
+                    // Update repository context menu
+                    var repoPath = value.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty);
+                    RepositoryContextMenu.RepositoryName = value.Name;
+                    RepositoryContextMenu.RepositoryPath = repoPath;
+                    RepositoryContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
+                    RepositoryContextMenu.IsActualRepository = value.IsLeaf;
                 }
             }
         }
@@ -248,6 +271,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     this.RaiseAndSetIfChanged(ref _selectedTag, value);
                     this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                    
+                    // Update tag context menu
+                    if (value != null)
+                    {
+                        TagContextMenu.TagName = value.Name;
+                        TagContextMenu.Repository = value.Repository?.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty) ?? string.Empty;
+                        TagContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
+                    }
                 }
             }
         }
@@ -412,6 +443,18 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _digestContextMenu;
             set => this.RaiseAndSetIfChanged(ref _digestContextMenu, value);
+        }
+
+        public TagContextMenuViewModel TagContextMenu
+        {
+            get => _tagContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _tagContextMenu, value);
+        }
+
+        public RepositoryContextMenuViewModel RepositoryContextMenu
+        {
+            get => _repositoryContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _repositoryContextMenu, value);
         }
 
         public Manifest? CurrentManifest
