@@ -100,8 +100,9 @@
             </StackPanel>
             <TextBox
               Grid.Row="1"
-              Watermark="Filter repositories..."
-              Text="{Binding RepositoryFilterText}" />
+              Watermark="Filter repositories (use * for wildcards)..."
+              Text="{Binding RepositoryFilterText}"
+              ToolTip.Tip="Filter repositories by name or path. Examples: bicep* (starts with), *packages* (contains), bicep/ai* (path match)" />
             <TreeView
               Grid.Row="2"
               ItemsSource="{Binding FilteredRepositories}"
@@ -157,8 +158,9 @@
             <TextBox
               Grid.Row="1"
               Margin="0,0,0,3"
-              Watermark="Filter tags..."
-              Text="{Binding TagFilterText}" />
+              Watermark="Filter tags (use * for wildcards)..."
+              Text="{Binding TagFilterText}"
+              ToolTip.Tip="Filter tags by name. Examples: v1.* (version prefix), *-alpha (suffix match), *rc* (contains)" />
             <ListBox
               Grid.Row="2"
               ItemsSource="{Binding Tags}"

@@ -19,6 +19,10 @@ public partial class MainView : UserControl
 
     private void MainView_AttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {
+        // Set focus to the registry textbox for immediate typing
+        var registryTextBox = this.FindControl<TextBox>("RegistryTextBox");
+        registryTextBox?.Focus();
+        
         // Find the connect button by name
         var connectButton = this.FindControl<Button>("ConnectButton");
         if (connectButton != null)

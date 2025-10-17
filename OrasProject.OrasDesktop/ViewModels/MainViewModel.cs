@@ -1548,7 +1548,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             if (!string.IsNullOrWhiteSpace(TagFilterText))
             {
                 var trimmed = TagFilterText.Trim();
-                source = source.Where(t => t.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+                source = source.Where(t => WildcardFilter.Matches(t.Name, trimmed));
             }
 
             var filtered = source.ToList();
@@ -1588,7 +1588,12 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         private Repository? PruneRepository(Repository source, string filter)
         {
-            bool selfMatch = source.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            // Check both the name (for simple matches like "ai") and the full path relative to registry
+            // (for hierarchical matches like "bicep/ai")
+            string relativePath = source.FullPath.Replace($"{source.Registry?.Url ?? ""}/", "");
+            bool selfMatch = WildcardFilter.Matches(source.Name, filter) || 
+                            WildcardFilter.Matches(relativePath, filter);
+            
             var prunedChildren = new List<Repository>();
             foreach (var child in source.Children)
             {
