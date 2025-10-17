@@ -86,7 +86,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             {
                 // Single image manifest
                 long size = CalculateImageManifestSize(jsonContent, manifestSize);
-                return ($"Image size: {FormatSize(size)}", new List<PlatformImageSize>(), false);
+                return (FormatSize(size), new List<PlatformImageSize>(), false);
             }
             else
             {
