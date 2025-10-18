@@ -1,8 +1,7 @@
-using System;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
-using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 
 namespace OrasProject.OrasDesktop.ViewModels;
@@ -15,7 +14,6 @@ public class TagContextMenuViewModel : ViewModelBase
     private string _tagName = string.Empty;
     private string _repository = string.Empty;
     private string _registryUrl = string.Empty;
-    private Func<Task<TopLevel?>>? _getTopLevel;
 
     public string TagName
     {
@@ -44,35 +42,34 @@ public class TagContextMenuViewModel : ViewModelBase
         CopyFullyQualifiedReferenceCommand = ReactiveCommand.CreateFromTask(CopyFullyQualifiedReference);
     }
 
-    public void SetTopLevelProvider(Func<Task<TopLevel?>> provider)
-    {
-        _getTopLevel = provider;
-    }
-
     private async Task CopyTag()
     {
-        if (!string.IsNullOrEmpty(TagName) && _getTopLevel != null)
+        if (!string.IsNullOrEmpty(TagName))
         {
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
-            {
-                await topLevel.Clipboard.SetTextAsync(TagName);
-            }
+            await CopyToClipboardAsync(TagName);
         }
     }
 
     private async Task CopyFullyQualifiedReference()
     {
-        if (!string.IsNullOrEmpty(TagName) && !string.IsNullOrEmpty(Repository) && _getTopLevel != null)
+        if (!string.IsNullOrEmpty(TagName) && !string.IsNullOrEmpty(Repository))
         {
             // Format: registry.example.com/repository:tag
             var registryPrefix = string.IsNullOrEmpty(RegistryUrl) ? "" : $"{RegistryUrl}/";
             var fullyQualifiedRef = $"{registryPrefix}{Repository}:{TagName}";
             
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
+            await CopyToClipboardAsync(fullyQualifiedRef);
+        }
+    }
+
+    private static async Task CopyToClipboardAsync(string text)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var mainWindow = desktop.MainWindow;
+            if (mainWindow?.Clipboard != null)
             {
-                await topLevel.Clipboard.SetTextAsync(fullyQualifiedRef);
+                await mainWindow.Clipboard.SetTextAsync(text);
             }
         }
     }

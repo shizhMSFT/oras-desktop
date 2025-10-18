@@ -56,6 +56,9 @@ namespace OrasProject.OrasDesktop.ViewModels
         private DigestContextMenuViewModel _digestContextMenu = new();
         private TagContextMenuViewModel _tagContextMenu = new();
         private RepositoryContextMenuViewModel _repositoryContextMenu = new();
+        private ReferrerNodeContextMenuViewModel _referrerNodeContextMenu = new();
+        private string _currentRepositoryPath = string.Empty; // Repository path without registry URL
+        private int _selectedTabIndex = 0; // 0 = Manifest tab, 1 = Referrers tab
         
         // Debounced selection timers
         private System.Threading.Timer? _repositorySelectionTimer;
@@ -77,26 +80,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             _registryService = registryService;
             _jsonHighlightService = jsonHighlightService;
 
-            // Setup digest context menu with clipboard access
-            _digestContextMenu.SetTopLevelProvider(() =>
-            {
-                var window = GetMainWindow();
-                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
-            });
-
-            // Setup tag context menu with clipboard access
-            _tagContextMenu.SetTopLevelProvider(() =>
-            {
-                var window = GetMainWindow();
-                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
-            });
-
-            // Setup repository context menu with clipboard access
-            _repositoryContextMenu.SetTopLevelProvider(() =>
-            {
-                var window = GetMainWindow();
-                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
-            });
+            // Context menus no longer need TopLevel provider - they use Application.Current for clipboard access
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
@@ -470,6 +454,23 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _repositoryContextMenu, value);
         }
 
+        public ReferrerNodeContextMenuViewModel ReferrerNodeContextMenu
+        {
+            get => _referrerNodeContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _referrerNodeContextMenu, value);
+        }
+
+        private ReferrerNode? _selectedReferrerNode;
+        public ReferrerNode? SelectedReferrerNode
+        {
+            get => _selectedReferrerNode;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedReferrerNode, value);
+                UpdateReferrerNodeContextMenu();
+            }
+        }
+
         public Manifest? CurrentManifest
         {
             get => _currentManifest;
@@ -480,6 +481,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         public bool CanModifySelectedTag => _selectedTag != null;
 
         public bool HasRepositories => _repositories.Count > 0;
+
+        public int SelectedTabIndex
+        {
+            get => _selectedTabIndex;
+            set => this.RaiseAndSetIfChanged(ref _selectedTabIndex, value);
+        }
 
         // Helper method to get the main window
         private Window? GetMainWindow()
@@ -890,6 +897,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                     $"{_currentRegistry.Url}/",
                     string.Empty
                 );
+                _currentRepositoryPath = repoPath; // Store for referrer context menu
+                
                 var manifest = await _registryService.GetManifestByTagAsync(
                     repoPath,
                     tag.Name,
@@ -1043,6 +1052,16 @@ namespace OrasProject.OrasDesktop.ViewModels
             finally
             {
                 ReferrersLoading = false;
+                
+                // If no referrers were loaded and user is on Referrers tab, switch back to Manifest tab
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (Referrers.Count == 0 && SelectedTabIndex == 1)
+                    {
+                        SelectedTabIndex = 0; // Switch to Manifest tab
+                    }
+                });
+                
                 // Reset progress bar state if no other operation is busy
                 if (!IsBusy)
                 {
@@ -1421,6 +1440,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+                _currentRepositoryPath = repository; // Store for referrer context menu
 
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
@@ -1441,8 +1461,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // IMPORTANT: Preserve the original pasted reference instead of resetting it
                 SelectedTagReference = originalReference;
 
-                // Try to find and select the matching tag in the UI if it exists
-                await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
+                // NOTE: We intentionally do NOT select the matching tag in the UI here
+                // because doing so triggers the SelectedTag property changed event which
+                // schedules a debounced load of that tag's manifest, overwriting the manifest
+                // we just loaded from the reference. The user's intended manifest is already loaded.
+                // await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
 
                 SetStatusMessage($"Loaded manifest for {originalReference}");
             }
@@ -1504,6 +1527,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+                _currentRepositoryPath = repoPath; // Store for referrer context menu
 
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
@@ -1837,14 +1861,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                             if (matchingTag != null && SelectedTag != matchingTag)
                             {
                                 // Select the matching tag without triggering a reload
-                                // Cancel any pending debounced load timer first
-                                _tagSelectionTimer?.Dispose();
-                                
                                 _selectedTag = matchingTag;
                                 this.RaisePropertyChanged(nameof(SelectedTag));
-                                
-                                // Cancel the timer again in case RaisePropertyChanged triggered it
-                                _tagSelectionTimer?.Dispose();
                             }
                         }
                     }
@@ -1867,6 +1885,18 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             return null;
+        }
+
+        private void UpdateReferrerNodeContextMenu()
+        {
+            if (SelectedReferrerNode != null)
+            {
+                // Set RegistryUrl and Repository FIRST, before Node
+                // because setting Node triggers UpdateContextMenus which creates the DigestContextMenu
+                ReferrerNodeContextMenu.RegistryUrl = RegistryUrl;
+                ReferrerNodeContextMenu.Repository = _currentRepositoryPath;
+                ReferrerNodeContextMenu.Node = SelectedReferrerNode;
+            }
         }
     }
 }

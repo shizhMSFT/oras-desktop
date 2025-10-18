@@ -1,8 +1,7 @@
-using System;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
-using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 
 namespace OrasProject.OrasDesktop.ViewModels;
@@ -16,7 +15,6 @@ public class RepositoryContextMenuViewModel : ViewModelBase
     private string _repositoryPath = string.Empty;
     private string _registryUrl = string.Empty;
     private bool _isActualRepository = true;
-    private Func<Task<TopLevel?>>? _getTopLevel;
 
     public string RepositoryName
     {
@@ -57,35 +55,34 @@ public class RepositoryContextMenuViewModel : ViewModelBase
         );
     }
 
-    public void SetTopLevelProvider(Func<Task<TopLevel?>> provider)
-    {
-        _getTopLevel = provider;
-    }
-
     private async Task CopyRepositoryName()
     {
-        if (!string.IsNullOrEmpty(RepositoryPath) && _getTopLevel != null)
+        if (!string.IsNullOrEmpty(RepositoryPath))
         {
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
-            {
-                await topLevel.Clipboard.SetTextAsync(RepositoryPath);
-            }
+            await CopyToClipboardAsync(RepositoryPath);
         }
     }
 
     private async Task CopyFullyQualifiedName()
     {
-        if (!string.IsNullOrEmpty(RepositoryPath) && IsActualRepository && _getTopLevel != null)
+        if (!string.IsNullOrEmpty(RepositoryPath) && IsActualRepository)
         {
             // Format: registry.example.com/repository
             var registryPrefix = string.IsNullOrEmpty(RegistryUrl) ? "" : $"{RegistryUrl}/";
             var fullyQualifiedName = $"{registryPrefix}{RepositoryPath}";
             
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
+            await CopyToClipboardAsync(fullyQualifiedName);
+        }
+    }
+
+    private static async Task CopyToClipboardAsync(string text)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var mainWindow = desktop.MainWindow;
+            if (mainWindow?.Clipboard != null)
             {
-                await topLevel.Clipboard.SetTextAsync(fullyQualifiedName);
+                await mainWindow.Clipboard.SetTextAsync(text);
             }
         }
     }
