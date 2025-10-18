@@ -9,6 +9,7 @@
         <ResourceDictionary>
             <!-- Converters -->
             <converters:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
+            <converters:StatusMessageMarginConverter x:Key="StatusMessageMarginConverter" />
             
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
