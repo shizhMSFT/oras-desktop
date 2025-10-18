@@ -16,6 +16,9 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Avalonia.ReactiveUI" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
+  <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.10" />
+  <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.10" />
+  <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.10" />
     <PackageReference Include="OrasProject.Oras" Version="0.4.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="AvaloniaEdit.TextMate" Version="11.0.5" />
