@@ -246,5 +246,71 @@ public partial class MainView : UserControl
             e.Handled = true;
         }
     }
+
+    private void ReferrersTreeView_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // Auto-expand selected referrer nodes
+        if (sender is TreeView treeView && e.AddedItems.Count > 0)
+        {
+            var selectedItem = e.AddedItems[0];
+            if (selectedItem != null)
+            {
+                // Find the TreeViewItem container for the selected item
+                Dispatcher.UIThread.Post(() =>
+                {
+                    var container = FindTreeViewItemContainer(treeView, selectedItem);
+                    if (container != null)
+                    {
+                        container.IsExpanded = true;
+                    }
+                }, DispatcherPriority.Loaded);
+            }
+        }
+    }
+
+    private TreeViewItem? FindTreeViewItemContainer(TreeView treeView, object item)
+    {
+        // Try to find the container in the visual tree
+        foreach (var rootItem in treeView.GetRealizedContainers())
+        {
+            if (rootItem is TreeViewItem rootContainer)
+            {
+                if (rootContainer.DataContext == item)
+                {
+                    return rootContainer;
+                }
+                
+                // Recursively search children
+                var found = FindTreeViewItemInChildren(rootContainer, item);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private TreeViewItem? FindTreeViewItemInChildren(TreeViewItem parent, object item)
+    {
+        foreach (var child in parent.GetRealizedContainers())
+        {
+            if (child is TreeViewItem childContainer)
+            {
+                if (childContainer.DataContext == item)
+                {
+                    return childContainer;
+                }
+                
+                // Recursively search nested children
+                var found = FindTreeViewItemInChildren(childContainer, item);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
     
 }

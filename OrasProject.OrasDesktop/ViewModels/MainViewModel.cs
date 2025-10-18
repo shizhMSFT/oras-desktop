@@ -38,6 +38,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private TextBlock? _manifestViewer;
         private Manifest? _currentManifest;
         private string _statusMessage = string.Empty;
+        private bool _isStatusError = false;
         private bool _isBusy;
         private Registry _currentRegistry = new Registry();
 
@@ -53,6 +54,11 @@ namespace OrasProject.OrasDesktop.ViewModels
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
         private DigestContextMenuViewModel _digestContextMenu = new();
+        private TagContextMenuViewModel _tagContextMenu = new();
+        private RepositoryContextMenuViewModel _repositoryContextMenu = new();
+        private ReferrerNodeContextMenuViewModel _referrerNodeContextMenu = new();
+        private string _currentRepositoryPath = string.Empty; // Repository path without registry URL
+        private int _selectedTabIndex = 0; // 0 = Manifest tab, 1 = Referrers tab
         
         // Debounced selection timers
         private System.Threading.Timer? _repositorySelectionTimer;
@@ -74,12 +80,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             _registryService = registryService;
             _jsonHighlightService = jsonHighlightService;
 
-            // Setup digest context menu with clipboard access
-            _digestContextMenu.SetTopLevelProvider(() =>
-            {
-                var window = GetMainWindow();
-                return Task.FromResult(window != null ? TopLevel.GetTopLevel(window) : null);
-            });
+            // Context menus no longer need TopLevel provider - they use Application.Current for clipboard access
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
@@ -229,6 +230,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (value != null)
                 {
                     ExpandRepositoryAncestors(value);
+                    
+                    // Update repository context menu
+                    var repoPath = value.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty);
+                    RepositoryContextMenu.RepositoryName = value.Name;
+                    RepositoryContextMenu.RepositoryPath = repoPath;
+                    RepositoryContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
+                    RepositoryContextMenu.IsActualRepository = value.IsLeaf;
                 }
             }
         }
@@ -248,6 +256,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     this.RaiseAndSetIfChanged(ref _selectedTag, value);
                     this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                    
+                    // Update tag context menu
+                    if (value != null)
+                    {
+                        TagContextMenu.TagName = value.Name;
+                        TagContextMenu.Repository = value.Repository?.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty) ?? string.Empty;
+                        TagContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
+                    }
                 }
             }
         }
@@ -262,6 +278,18 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _statusMessage;
             set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
+        }
+
+        public bool IsStatusError
+        {
+            get => _isStatusError;
+            set => this.RaiseAndSetIfChanged(ref _isStatusError, value);
+        }
+
+        private void SetStatusMessage(string message, bool isError = false)
+        {
+            StatusMessage = message;
+            IsStatusError = isError;
         }
 
         public bool IsBusy
@@ -414,6 +442,35 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _digestContextMenu, value);
         }
 
+        public TagContextMenuViewModel TagContextMenu
+        {
+            get => _tagContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _tagContextMenu, value);
+        }
+
+        public RepositoryContextMenuViewModel RepositoryContextMenu
+        {
+            get => _repositoryContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _repositoryContextMenu, value);
+        }
+
+        public ReferrerNodeContextMenuViewModel ReferrerNodeContextMenu
+        {
+            get => _referrerNodeContextMenu;
+            set => this.RaiseAndSetIfChanged(ref _referrerNodeContextMenu, value);
+        }
+
+        private ReferrerNode? _selectedReferrerNode;
+        public ReferrerNode? SelectedReferrerNode
+        {
+            get => _selectedReferrerNode;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedReferrerNode, value);
+                UpdateReferrerNodeContextMenu();
+            }
+        }
+
         public Manifest? CurrentManifest
         {
             get => _currentManifest;
@@ -424,6 +481,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         public bool CanModifySelectedTag => _selectedTag != null;
 
         public bool HasRepositories => _repositories.Count > 0;
+
+        public int SelectedTabIndex
+        {
+            get => _selectedTabIndex;
+            set => this.RaiseAndSetIfChanged(ref _selectedTabIndex, value);
+        }
 
         // Helper method to get the main window
         private Window? GetMainWindow()
@@ -447,7 +510,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private async Task ConnectToRegistryAsync(bool forceLogin)
         {
             IsBusy = true;
-            StatusMessage = "Connecting to registry...";
+            SetStatusMessage("Connecting to registry...");
 
             try
             {
@@ -477,7 +540,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 var mainWindow = GetMainWindow();
                 if (mainWindow == null)
                 {
-                    StatusMessage = "Failed to get main window";
+                    SetStatusMessage("Failed to get main window", isError: true);
                     return;
                 }
 
@@ -487,7 +550,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
                     if (!result.Result)
                     {
-                        StatusMessage = "Authentication cancelled";
+                        SetStatusMessage("Authentication cancelled", isError: true);
 
                         // Restore original credentials
                         _currentRegistry.AuthenticationType = originalAuthType;
@@ -549,7 +612,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                         Repositories.Add(repo);
                     }
                     ApplyRepositoryFilter();
-                    StatusMessage = "Connected to registry (authenticated)";
+                    SetStatusMessage("Connected to registry (authenticated)");
                     RegistryConnected?.Invoke(this, EventArgs.Empty);
                     return;
                 }
@@ -570,7 +633,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                             Repositories.Add(repo);
                         }
                         ApplyRepositoryFilter();
-                        StatusMessage = "Connected to registry (anonymous)";
+                        SetStatusMessage("Connected to registry (anonymous)");
                         RegistryConnected?.Invoke(this, EventArgs.Empty);
                     }
                 }
@@ -580,7 +643,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
                     if (!result.Result)
                     {
-                        StatusMessage = "Authentication cancelled";
+                        SetStatusMessage("Authentication cancelled", isError: true);
 
                         // Restore original credentials
                         _currentRegistry.AuthenticationType = originalAuthType;
@@ -642,17 +705,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                         Repositories.Add(repo);
                     }
                     ApplyRepositoryFilter();
-                    StatusMessage = "Connected to registry (authenticated)";
+                    SetStatusMessage("Connected to registry (authenticated)");
                     RegistryConnected?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error connecting to registry: {ex.Message}";
+                SetStatusMessage($"Error connecting to registry: {ex.Message}", isError: true);
             }
             finally
             {
@@ -671,7 +734,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             IsBusy = true;
-            StatusMessage = $"Loading tags for {repository.Name}...";
+            SetStatusMessage($"Loading tags for {repository.Name}...");
 
             try
             {
@@ -703,15 +766,15 @@ namespace OrasProject.OrasDesktop.ViewModels
 
                 // Digest resolution removed for performance; resolved only when required for delete.
 
-                StatusMessage = $"Loaded {tags.Count} tags for {repository.Name}";
+                SetStatusMessage($"Loaded {tags.Count} tags for {repository.Name}");
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading tags: {ex.Message}";
+                SetStatusMessage($"Error loading tags: {ex.Message}", isError: true);
             }
             finally
             {
@@ -723,7 +786,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private async Task RefreshRepositoriesAsync()
         {
             IsBusy = true;
-            StatusMessage = "Refreshing repositories...";
+            SetStatusMessage("Refreshing repositories...");
 
             try
             {
@@ -790,15 +853,15 @@ namespace OrasProject.OrasDesktop.ViewModels
                     HasPlatformSizes = false;
                 }
 
-                StatusMessage = "Repositories refreshed";
+                SetStatusMessage("Repositories refreshed");
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error refreshing repositories: {ex.Message}";
+                SetStatusMessage($"Error refreshing repositories: {ex.Message}", isError: true);
             }
             finally
             {
@@ -811,7 +874,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (SelectedRepository == null)
             {
-                StatusMessage = "No repository selected";
+                SetStatusMessage("No repository selected", isError: true);
                 return;
             }
 
@@ -826,7 +889,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             IsBusy = true;
-            StatusMessage = $"Loading manifest for {tag.Name}...";
+            SetStatusMessage($"Loading manifest for {tag.Name}...");
 
             try
             {
@@ -834,6 +897,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                     $"{_currentRegistry.Url}/",
                     string.Empty
                 );
+                _currentRepositoryPath = repoPath; // Store for referrer context menu
+                
                 var manifest = await _registryService.GetManifestByTagAsync(
                     repoPath,
                     tag.Name,
@@ -864,17 +929,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                 IsProgressIndeterminate = false;
                 _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
 
-                StatusMessage = $"Loaded manifest for {tag.Name}";
+                SetStatusMessage($"Loaded manifest for {tag.Name}");
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
                 ManifestContent = string.Empty;
                 ManifestViewer = null;
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading manifest: {ex.Message}";
+                SetStatusMessage($"Error loading manifest: {ex.Message}", isError: true);
                 ManifestContent = string.Empty;
                 ManifestViewer = null;
             }
@@ -941,7 +1006,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Use a progress handler to update both the status message and progress bar
                 var progress = new Progress<int>(count =>
                 {
-                    StatusMessage = $"Loading referrers ({count})...";
+                    SetStatusMessage($"Loading referrers ({count})...");
                     // Set an indeterminate progress at first to show activity
                     if (count == 1)
                     {
@@ -970,23 +1035,33 @@ namespace OrasProject.OrasDesktop.ViewModels
                     foreach (var c in n.Children) CountNode(c);
                 }
                 foreach (var root in nodes) CountNode(root);
-                StatusMessage = $"Loaded referrers ({total})";
+                SetStatusMessage($"Loaded referrers ({total})");
                 // Set progress to 100% when complete
                 ProgressValue = 100;
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
                 Referrers.Clear();
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading referrers: {ex.Message}";
+                SetStatusMessage($"Error loading referrers: {ex.Message}", isError: true);
                 Referrers.Clear();
             }
             finally
             {
                 ReferrersLoading = false;
+                
+                // If no referrers were loaded and user is on Referrers tab, switch back to Manifest tab
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (Referrers.Count == 0 && SelectedTabIndex == 1)
+                    {
+                        SelectedTabIndex = 0; // Switch to Manifest tab
+                    }
+                });
+                
                 // Reset progress bar state if no other operation is busy
                 if (!IsBusy)
                 {
@@ -1003,14 +1078,14 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (SelectedTag == null)
             {
-                StatusMessage = "No tag selected";
+                SetStatusMessage("No tag selected", isError: true);
                 return;
             }
 
             var mainWindow = GetMainWindow();
             if (mainWindow == null)
             {
-                StatusMessage = "Failed to get main window";
+                SetStatusMessage("Failed to get main window", isError: true);
                 return;
             }
 
@@ -1021,83 +1096,17 @@ namespace OrasProject.OrasDesktop.ViewModels
             );
             string fullReference = $"{_currentRegistry.Url}/{manifestRepoPath}:{SelectedTag.Name}";
 
-            // Confirm deletion
-            var messageBox = new Window
-            {
-                Title = "Confirm Deletion",
-                Width = 400, // Increased width to accommodate longer text
-                Height = 170, // Increased height to accommodate the warning text
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                CanResize = false,
-                SizeToContent = SizeToContent.Height,
-                Content = new Grid
-                {
-                    RowDefinitions = new RowDefinitions("*,Auto"),
-                    Margin = new Avalonia.Thickness(20),
-                    Children =
-                    {
-                        new TextBlock
-                        {
-                            Text =
-                                $"Are you sure you want to delete the manifest `{fullReference}`?\nThis action cannot be undone.",
-                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                            [Grid.RowProperty] = 0,
-                        },
-                        new StackPanel
-                        {
-                            Orientation = Avalonia.Layout.Orientation.Horizontal,
-                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                            Spacing = 10,
-                            [Grid.RowProperty] = 1,
-                            Children =
-                            {
-                                new Button
-                                {
-                                    Content = "Cancel",
-                                    Width = 80,
-                                    [Grid.ColumnProperty] = 0,
-                                    Tag = false,
-                                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                                },
-                                new Button
-                                {
-                                    Content = "Delete",
-                                    Width = 80,
-                                    [Grid.ColumnProperty] = 1,
-                                    Tag = true,
-                                    Classes = { "Danger" },
-                                    Background = new SolidColorBrush(Color.Parse("#d9534f")),
-                                    Foreground = Brushes.White,
-                                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                                },
-                            },
-                        },
-                    },
-                },
-            };
+            // Show delete confirmation dialog
+            var dialog = new DeleteManifestDialog(fullReference);
+            var result = await dialog.ShowDialog<bool>(mainWindow);
 
-            bool confirmResult = false;
-            foreach (var button in ((StackPanel)((Grid)messageBox.Content!).Children[1]).Children)
-            {
-                if (button is Button btn)
-                {
-                    btn.Click += (s, e) =>
-                    {
-                        confirmResult = (bool)btn.Tag!;
-                        messageBox.Close();
-                    };
-                }
-            }
-
-            await messageBox.ShowDialog(mainWindow);
-
-            if (!confirmResult)
+            if (!result)
             {
                 return;
             }
 
             IsBusy = true;
-            StatusMessage = $"Deleting manifest for {SelectedTag.Name}...";
+            SetStatusMessage($"Deleting manifest for {SelectedTag.Name}...");
 
             // Store the tag name before deletion to use in status message later
             string tagName = SelectedTag.Name;
@@ -1119,15 +1128,15 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                StatusMessage = $"Deleted manifest for {tagName}";
+                SetStatusMessage($"Deleted manifest for {tagName}");
             }
             catch (Services.RegistryOperationException regEx)
             {
-                StatusMessage = regEx.Message;
+                SetStatusMessage(regEx.Message, isError: true);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error deleting manifest: {ex.Message}";
+                SetStatusMessage($"Error deleting manifest: {ex.Message}", isError: true);
             }
             finally
             {
@@ -1140,7 +1149,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (SelectedTag == null)
             {
-                StatusMessage = "No tag selected";
+                SetStatusMessage("No tag selected", isError: true);
                 return;
             }
 
@@ -1154,16 +1163,16 @@ namespace OrasProject.OrasDesktop.ViewModels
                 if (topLevel != null)
                 {
                     await topLevel.Clipboard!.SetTextAsync(reference);
-                    StatusMessage = "Reference copied to clipboard";
+                    SetStatusMessage("Reference copied to clipboard");
                 }
                 else
                 {
-                    StatusMessage = "Failed to access clipboard";
+                    SetStatusMessage("Failed to access clipboard", isError: true);
                 }
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error copying reference: {ex.Message}";
+                SetStatusMessage($"Error copying reference: {ex.Message}", isError: true);
             }
         }
 
@@ -1171,13 +1180,13 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SelectedTagReference))
             {
-                StatusMessage = "Reference is empty";
+                SetStatusMessage("Reference is empty", isError: true);
                 return;
             }
 
             IsBusy = true;
             string originalReference = SelectedTagReference.Trim();
-            StatusMessage = $"Processing reference {originalReference}...";
+            SetStatusMessage($"Processing reference {originalReference}...");
 
             try
             {
@@ -1187,19 +1196,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     if (!Reference.TryParse(originalReference, out parsedRef))
                     {
-                        StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
+                        SetStatusMessage("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
                         return;
                     }
                 }
                 catch (FormatException ex)
                 {
                     // Catch InvalidResponseException and other format exceptions from ORAS library
-                    StatusMessage = $"Error parsing reference: {ex.Message}";
+                    SetStatusMessage($"Error parsing reference: {ex.Message}", isError: true);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = $"Unexpected error parsing reference: {ex.Message}";
+                    SetStatusMessage($"Unexpected error parsing reference: {ex.Message}", isError: true);
                     return;
                 }
                 
@@ -1207,7 +1216,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     string.IsNullOrEmpty(parsedRef.Registry) || 
                     string.IsNullOrEmpty(parsedRef.Repository))
                 {
-                    StatusMessage = "Invalid reference format. Expected: registry/repository:tag or registry/repository@digest";
+                    SetStatusMessage("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
                     return;
                 }
 
@@ -1230,7 +1239,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     RegistryUrl = registry;
 
                     // Connect to the new registry
-                    StatusMessage = $"Connecting to registry {registry}...";
+                    SetStatusMessage($"Connecting to registry {registry}...");
 
                     // Initialize with anonymous auth first
                     _currentRegistry.Url = registry;
@@ -1268,7 +1277,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                                 ApplyRepositoryFilter();
                             });
 
-                            StatusMessage = $"Connected to registry {registry} (anonymous)";
+                            SetStatusMessage($"Connected to registry {registry} (anonymous)");
                         }
                         catch (Exception)
                         {
@@ -1276,14 +1285,14 @@ namespace OrasProject.OrasDesktop.ViewModels
                             var mainWindow = GetMainWindow();
                             if (mainWindow == null)
                             {
-                                StatusMessage = "Failed to get main window";
+                                SetStatusMessage("Failed to get main window", isError: true);
                                 return;
                             }
 
                             var result = await LoginDialog.ShowDialog(mainWindow, registry);
                             if (!result.Result)
                             {
-                                StatusMessage = "Authentication cancelled";
+                                SetStatusMessage("Authentication cancelled", isError: true);
                                 return;
                             }
 
@@ -1328,11 +1337,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                                     ApplyRepositoryFilter();
                                 });
 
-                                StatusMessage = $"Connected to registry {registry} (authenticated)";
+                                SetStatusMessage($"Connected to registry {registry} (authenticated)");
                             }
                             catch (Exception ex)
                             {
-                                StatusMessage = $"Connected to registry {registry}, but couldn't fetch repositories: {ex.Message}";
+                                SetStatusMessage($"Connected to registry {registry}, but couldn't fetch repositories: {ex.Message}", isError: true);
                                 // Clear repositories since we can't fetch them
                                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                                 {
@@ -1344,7 +1353,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     }
                     catch (Exception ex)
                     {
-                        StatusMessage = $"Error connecting to registry {registry}: {ex.Message}";
+                        SetStatusMessage($"Error connecting to registry {registry}: {ex.Message}", isError: true);
                         return;
                     }
                 }
@@ -1352,7 +1361,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Now fetch tags for the repository if possible
                 try
                 {
-                    StatusMessage = $"Loading tags for repository {repository}...";
+                    SetStatusMessage($"Loading tags for repository {repository}...");
                     var tagNames = await _registryService.ListTagsAsync(repository, default);
 
                     // Create a tag collection
@@ -1392,15 +1401,15 @@ namespace OrasProject.OrasDesktop.ViewModels
                         FindAndSelectRepository(repository);
                     });
 
-                    StatusMessage = $"Loaded {tags.Count} tags for {repository}";
+                    SetStatusMessage($"Loaded {tags.Count} tags for {repository}");
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = $"Error loading tags for {repository}: {ex.Message}";
+                    SetStatusMessage($"Error loading tags for {repository}: {ex.Message}", isError: true);
                 }
 
                 // Now load the manifest
-                StatusMessage = $"Loading manifest for {originalReference}...";
+                SetStatusMessage($"Loading manifest for {originalReference}...");
 
                 ManifestResult manifest;
 
@@ -1431,6 +1440,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+                _currentRepositoryPath = repository; // Store for referrer context menu
 
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
@@ -1451,14 +1461,17 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // IMPORTANT: Preserve the original pasted reference instead of resetting it
                 SelectedTagReference = originalReference;
 
-                // Try to find and select the matching tag in the UI if it exists
-                await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
+                // NOTE: We intentionally do NOT select the matching tag in the UI here
+                // because doing so triggers the SelectedTag property changed event which
+                // schedules a debounced load of that tag's manifest, overwriting the manifest
+                // we just loaded from the reference. The user's intended manifest is already loaded.
+                // await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
 
-                StatusMessage = $"Loaded manifest for {originalReference}";
+                SetStatusMessage($"Loaded manifest for {originalReference}");
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error processing reference: {ex.Message}";
+                SetStatusMessage($"Error processing reference: {ex.Message}", isError: true);
                 ManifestContent = string.Empty;
                 ManifestViewer = null;
             }
@@ -1483,12 +1496,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (string.IsNullOrEmpty(platformSize.Digest) || SelectedRepository == null)
             {
-                StatusMessage = "Platform digest not available";
+                SetStatusMessage("Platform digest not available", isError: true);
                 return;
             }
 
             IsBusy = true;
-            StatusMessage = $"Loading manifest for platform {platformSize.Platform}...";
+            SetStatusMessage($"Loading manifest for platform {platformSize.Platform}...");
 
             try
             {
@@ -1514,6 +1527,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 };
 
                 ManifestContent = CurrentManifest.RawContent;
+                _currentRepositoryPath = repoPath; // Store for referrer context menu
 
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
@@ -1535,11 +1549,11 @@ namespace OrasProject.OrasDesktop.ViewModels
                 IsProgressIndeterminate = false;
                 _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
 
-                StatusMessage = $"Loaded manifest for platform {platformSize.Platform}";
+                SetStatusMessage($"Loaded manifest for platform {platformSize.Platform}");
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading platform manifest: {ex.Message}";
+                SetStatusMessage($"Error loading platform manifest: {ex.Message}", isError: true);
             }
             finally
             {
@@ -1847,14 +1861,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                             if (matchingTag != null && SelectedTag != matchingTag)
                             {
                                 // Select the matching tag without triggering a reload
-                                // Cancel any pending debounced load timer first
-                                _tagSelectionTimer?.Dispose();
-                                
                                 _selectedTag = matchingTag;
                                 this.RaisePropertyChanged(nameof(SelectedTag));
-                                
-                                // Cancel the timer again in case RaisePropertyChanged triggered it
-                                _tagSelectionTimer?.Dispose();
                             }
                         }
                     }
@@ -1877,6 +1885,18 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             return null;
+        }
+
+        private void UpdateReferrerNodeContextMenu()
+        {
+            if (SelectedReferrerNode != null)
+            {
+                // Set RegistryUrl and Repository FIRST, before Node
+                // because setting Node triggers UpdateContextMenus which creates the DigestContextMenu
+                ReferrerNodeContextMenu.RegistryUrl = RegistryUrl;
+                ReferrerNodeContextMenu.Repository = _currentRepositoryPath;
+                ReferrerNodeContextMenu.Node = SelectedReferrerNode;
+            }
         }
     }
 }

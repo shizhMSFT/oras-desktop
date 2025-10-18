@@ -1,42 +1,23 @@
 using System;
+using System.Reactive;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 
 namespace OrasProject.OrasDesktop.ViewModels;
 
 /// <summary>
-/// View model for digest context menu operations.
+/// Reusable context menu view model for digest operations.
+/// Can be used for manifest digests, referrer digests, and any other digest displays.
 /// </summary>
 public class DigestContextMenuViewModel : ViewModelBase
 {
     private string _digest = string.Empty;
-    private string _repository = string.Empty;
-    private string _registryUrl = string.Empty;
-    private Func<Task<TopLevel?>>? _getTopLevel;
-
-    public string Digest
-    {
-        get => _digest;
-        set => this.RaiseAndSetIfChanged(ref _digest, value);
-    }
-
-    public string Repository
-    {
-        get => _repository;
-        set => this.RaiseAndSetIfChanged(ref _repository, value);
-    }
-
-    public string RegistryUrl
-    {
-        get => _registryUrl;
-        set => this.RaiseAndSetIfChanged(ref _registryUrl, value);
-    }
-
-    public ICommand CopyDigestCommand { get; }
-    public ICommand CopyFullyQualifiedReferenceCommand { get; }
+    private string? _repository;
+    private string? _registryUrl;
 
     public DigestContextMenuViewModel()
     {
@@ -44,36 +25,67 @@ public class DigestContextMenuViewModel : ViewModelBase
         CopyFullyQualifiedReferenceCommand = ReactiveCommand.CreateFromTask(CopyFullyQualifiedReference);
     }
 
-    public void SetTopLevelProvider(Func<Task<TopLevel?>> provider)
+    public DigestContextMenuViewModel(string digest, string? registryUrl = null, string? repository = null) : this()
     {
-        _getTopLevel = provider;
+        _digest = digest;
+        _registryUrl = registryUrl;
+        _repository = repository;
     }
+
+    public string Digest
+    {
+        get => _digest;
+        set => this.RaiseAndSetIfChanged(ref _digest, value);
+    }
+
+    public string? Repository
+    {
+        get => _repository;
+        set => this.RaiseAndSetIfChanged(ref _repository, value);
+    }
+
+    public string? RegistryUrl
+    {
+        get => _registryUrl;
+        set => this.RaiseAndSetIfChanged(ref _registryUrl, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> CopyDigestCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyFullyQualifiedReferenceCommand { get; }
 
     private async Task CopyDigest()
     {
-        if (!string.IsNullOrEmpty(Digest) && _getTopLevel != null)
-        {
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
-            {
-                await topLevel.Clipboard.SetTextAsync(Digest);
-            }
-        }
+        await CopyToClipboardAsync(Digest);
     }
 
     private async Task CopyFullyQualifiedReference()
     {
-        if (!string.IsNullOrEmpty(Digest) && !string.IsNullOrEmpty(Repository) && _getTopLevel != null)
+        if (string.IsNullOrEmpty(RegistryUrl) || string.IsNullOrEmpty(Repository))
+            return;
+
+        // Format: registry.example.com/repository@digest
+        var registryPrefix = RegistryUrl.EndsWith('/') ? RegistryUrl : $"{RegistryUrl}/";
+        var fullyQualifiedRef = $"{registryPrefix}{Repository}@{Digest}";
+
+        await CopyToClipboardAsync(fullyQualifiedRef);
+    }
+
+    private static async Task CopyToClipboardAsync(string text)
+    {
+        try
         {
-            // Format: registry.example.com/repository@digest
-            var registryPrefix = string.IsNullOrEmpty(RegistryUrl) ? "" : $"{RegistryUrl}/";
-            var fullyQualifiedRef = $"{registryPrefix}{Repository}@{Digest}";
-            
-            var topLevel = await _getTopLevel();
-            if (topLevel?.Clipboard != null)
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                await topLevel.Clipboard.SetTextAsync(fullyQualifiedRef);
+                var mainWindow = desktop.MainWindow;
+                if (mainWindow?.Clipboard != null)
+                {
+                    await mainWindow.Clipboard.SetTextAsync(text);
+                }
             }
+        }
+        catch (Exception)
+        {
+            // Silently fail clipboard operations
         }
     }
 }

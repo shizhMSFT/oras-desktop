@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="OrasProject.OrasDesktop.Views.DeleteManifestDialog"
+        Title="Confirm Deletion"
+        Width="500"
+        Height="180"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SizeToContent="Height">
+    
+    <Grid RowDefinitions="*,Auto" Margin="20">
+        <!-- Content -->
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Name="QuestionText"
+                       TextWrapping="Wrap"
+                       FontSize="13"
+                       Margin="0,0,0,12" />
+            
+            <Border Name="CodeBlock"
+                    Background="#0D1117"
+                    BorderBrush="#30363D"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="16,12"
+                    Margin="0,0,0,12">
+                <TextBlock Name="ReferenceText"
+                           FontFamily="Cascadia Code, Consolas, Menlo, Monaco, monospace"
+                           FontSize="12"
+                           Foreground="#E6EDF3"
+                           TextWrapping="Wrap" />
+            </Border>
+            
+            <TextBlock Text="⚠️ This action cannot be undone."
+                       TextWrapping="Wrap"
+                       FontSize="12"
+                       Foreground="#FFA500" />
+        </StackPanel>
+        
+        <!-- Buttons -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,16,0,0">
+            <Button Name="CancelButton"
+                    Content="Cancel"
+                    Width="90"
+                    Height="32"
+                    FontWeight="SemiBold"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="CancelButton_Click" />
+            
+            <Button Name="DeleteButton"
+                    Content="Delete"
+                    Width="90"
+                    Height="32"
+                    Classes="Danger"
+                    Background="#DC3545"
+                    Foreground="White"
+                    FontWeight="SemiBold"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="DeleteButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

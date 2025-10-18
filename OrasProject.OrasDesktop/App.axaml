@@ -1,11 +1,16 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:OrasProject.OrasDesktop.Converters"
              x:Class="OrasProject.OrasDesktop.App"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.Resources>
         <ResourceDictionary>
+            <!-- Converters -->
+            <converters:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
+            <converters:StatusMessageMarginConverter x:Key="StatusMessageMarginConverter" />
+            
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="ArtifactPanelBackground">#F5F5F5</SolidColorBrush>
