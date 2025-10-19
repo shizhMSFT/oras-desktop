@@ -1,0 +1,150 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrasProject.OrasDesktop.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="30"
+             x:Class="OrasProject.OrasDesktop.Views.ReferenceHistoryControl"
+             x:DataType="vm:ReferenceHistoryViewModel">
+  
+  <Panel>
+    <Border x:Name="RootBorder" Background="Transparent">
+      <Grid ColumnDefinitions="*,Auto">
+        <!-- TextBox -->
+        <TextBox
+        Grid.Column="0"
+        x:Name="ReferenceTextBox"
+        Height="30"
+        Padding="12,0,30,0"
+        VerticalAlignment="Center"
+        VerticalContentAlignment="Center"
+        Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+        BorderThickness="1"
+        CornerRadius="3"
+        Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+        Watermark="Enter registry/repository:tag or @digest..."
+        Text="{Binding CurrentReference}"
+        GotFocus="ReferenceTextBox_GotFocus">
+        <TextBox.KeyBindings>
+          <!-- Up/Down for dropdown navigation -->
+          <KeyBinding Command="{Binding NavigateUpCommand}" Gesture="Up" />
+          <KeyBinding Command="{Binding NavigateDownCommand}" Gesture="Down" />
+          <!-- Ctrl+Left/Right for history navigation -->
+          <KeyBinding Command="{Binding NavigateBackCommand}" Gesture="Ctrl+Left" />
+          <KeyBinding Command="{Binding NavigateForwardCommand}" Gesture="Ctrl+Right" />
+          <!-- Escape to close dropdown -->
+          <KeyBinding Command="{Binding CloseDropDownCommand}" Gesture="Escape" />
+          <!-- Delete to remove selected history item -->
+          <KeyBinding Command="{Binding RemoveSelectedItemCommand}" Gesture="Delete" />
+        </TextBox.KeyBindings>
+      </TextBox>
+
+      <!-- Dropdown Arrow Button -->
+      <Button
+        Grid.Column="0"
+        Width="24"
+        Height="24"
+        Margin="0,0,4,0"
+        Padding="0"
+        HorizontalAlignment="Right"
+        VerticalAlignment="Center"
+        Background="Transparent"
+        BorderThickness="0"
+        Command="{Binding ToggleDropDownCommand}"
+        ToolTip.Tip="Show history">
+        <Button.Styles>
+          <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
+          </Style>
+          <Style Selector="Button:pressed">
+            <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListMediumBrush}" />
+          </Style>
+        </Button.Styles>
+        <Path
+          Width="10"
+          Height="10"
+          Data="M7,10L12,15L17,10H7Z"
+          Fill="#666666"
+          Stretch="Uniform" />
+      </Button>
+    </Grid>
+  </Border>
+
+    <!-- Popup for dropdown -->
+    <Popup
+      x:Name="PART_Popup"
+      WindowManagerAddShadowHint="False"
+      IsOpen="{Binding IsDropDownOpen, Mode=TwoWay}"
+      PlacementTarget="RootBorder"
+      IsLightDismissEnabled="True">
+      <Border
+        Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+        BorderThickness="1"
+        CornerRadius="3"
+        Padding="0"
+        Width="{Binding #RootBorder.Bounds.Width}"
+        MaxHeight="200"
+        BoxShadow="0 4 8 0 #40000000">
+        <ListBox
+          x:Name="PART_HistoryListBox"
+          ItemsSource="{Binding HistoryItems}"
+          SelectedIndex="{Binding SelectedHistoryIndex, Mode=TwoWay}"
+          Background="Transparent"
+          BorderThickness="0"
+          Padding="0">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="0" />
+              <Setter Property="Margin" Value="0" />
+              <Setter Property="MinHeight" Value="0" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid
+                Height="30"
+                ColumnDefinitions="*,Auto"
+                Background="Transparent">
+                <TextBlock
+                  Grid.Column="0"
+                  Text="{Binding}"
+                  FontFamily="Consolas"
+                  FontSize="11"
+                  Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                  VerticalAlignment="Center"
+                  Margin="8,0,8,0"
+                  TextTrimming="CharacterEllipsis" />
+                <Button
+                  Grid.Column="1"
+                  Width="20"
+                  Height="20"
+                  Margin="0,0,4,0"
+                  Padding="0"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  VerticalAlignment="Center"
+                  Click="DeleteHistoryItem_Click"
+                  Tag="{Binding}"
+                  ToolTip.Tip="Remove from history">
+                  <Button.Styles>
+                    <Style Selector="Button:pointerover">
+                      <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
+                    </Style>
+                  </Button.Styles>
+                  <Path
+                    Width="12"
+                    Height="12"
+                    Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                    Fill="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                    Stretch="Uniform" />
+                </Button>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Popup>
+  </Panel>
+</UserControl>

@@ -1,0 +1,51 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrasProject.OrasDesktop.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="30"
+             x:Class="OrasProject.OrasDesktop.Views.StatusBar"
+             x:DataType="vm:StatusBarViewModel">
+    
+    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            Padding="10,5">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+            <!-- Error Icon -->
+            <TextBlock Grid.Column="0"
+                       Margin="0,0,5,0"
+                       VerticalAlignment="Center"
+                       Text="❌"
+                       FontSize="14"
+                       IsVisible="{Binding IsStatusError}" />
+            
+            <!-- Status Message -->
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Text="{Binding StatusMessage}"
+                       Foreground="Gray">
+                <TextBlock.Styles>
+                    <Style Selector="TextBlock[IsEnabled=False]">
+                        <Setter Property="Foreground" Value="Red" />
+                    </Style>
+                </TextBlock.Styles>
+                <TextBlock.IsEnabled>
+                    <Binding Path="!IsStatusError" />
+                </TextBlock.IsEnabled>
+            </TextBlock>
+            
+            <!-- Progress Bar -->
+            <ProgressBar Grid.Column="2"
+                         Width="100"
+                         Height="15"
+                         Margin="10,0,0,0"
+                         Value="{Binding ProgressValue}"
+                         Maximum="100"
+                         IsIndeterminate="{Binding IsProgressIndeterminate}"
+                         IsVisible="{Binding IsProgressVisible}" />
+        </Grid>
+    </Border>
+    
+</UserControl>

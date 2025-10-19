@@ -1,13 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
+using Microsoft.Extensions.Logging;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Views;
@@ -20,300 +22,174 @@ namespace OrasProject.OrasDesktop.ViewModels
 {
     public partial class MainViewModel : ViewModelBase
     {
-        private readonly IRegistryService _registryService;
-        private readonly JsonHighlightService _jsonHighlightService;
+    private readonly IRegistryService _registryService;
+    private readonly JsonHighlightService _jsonHighlightService;
+    private readonly Services.ConnectionService _connectionService;
+    private readonly Services.ManifestService _manifestService;
+    private readonly Services.RepositoryService _repositoryService;
+    private readonly Services.TagService _tagService;
+    private readonly Services.ArtifactService _artifactService;
+    private readonly Services.StatusService _statusService;
+    private readonly Services.ManifestLoadCoordinator _manifestLoadCoordinator;
+    private readonly ILogger<MainViewModel> _logger;
 
         // Events
         public event EventHandler? RegistryConnected;
 
         // Properties
-        private string _registryUrl = "mcr.microsoft.com";
-        private ObservableCollection<Repository> _repositories =
-            new ObservableCollection<Repository>();
-        private ObservableCollection<Repository> _filteredRepositories = new();
-        private Repository? _selectedRepository;
-        private ObservableCollection<Tag> _tags = new ObservableCollection<Tag>();
-        private List<Tag> _allTags = new();
-        private Tag? _selectedTag;
         private TextBlock? _manifestViewer;
         private Manifest? _currentManifest;
-        private string _statusMessage = string.Empty;
-        private bool _isStatusError = false;
-        private bool _isBusy;
-        private Registry _currentRegistry = new Registry();
 
         private string _selectedTagReference = string.Empty;
         private string _manifestContent = string.Empty;
         private ObservableCollection<ReferrerNode> _referrers = new();
         private bool _referrersLoading;
-        private double _progressValue;
-        private bool _isProgressIndeterminate;
-        private string _repositoryFilterText = string.Empty;
-        private string _tagFilterText = string.Empty;
         private string _artifactSizeSummary = string.Empty;
         private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
         private bool _hasPlatformSizes = false;
         private DigestContextMenuViewModel _digestContextMenu = new();
-        private TagContextMenuViewModel _tagContextMenu = new();
-        private RepositoryContextMenuViewModel _repositoryContextMenu = new();
         private ReferrerNodeContextMenuViewModel _referrerNodeContextMenu = new();
         private string _currentRepositoryPath = string.Empty; // Repository path without registry URL
         private int _selectedTabIndex = 0; // 0 = Manifest tab, 1 = Referrers tab
-        
-        // Debounced selection timers
-        private System.Threading.Timer? _repositorySelectionTimer;
-        private System.Threading.Timer? _tagSelectionTimer;
-        private const int SelectionDebounceMilliseconds = 500; // Wait 500ms before loading
+        private ReferenceHistoryViewModel _referenceHistory; // Initialized in constructor with manifestService
+        private RepositorySelectorViewModel _repositorySelector; // Repository selector component (injected via DI)
+        private TagSelectorViewModel _tagSelector; // Tag selector component (initialized in constructor)
+        private ConnectionViewModel _connection = new(); // Connection control component
+        private StatusBarViewModel _statusBar; // Status bar component (subscribes to StatusService)
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
-        public ReactiveCommand<Unit, Unit> RefreshRepositoriesCommand { get; }
-        public ReactiveCommand<Unit, Unit> RefreshTagsCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
         public ReactiveCommand<PlatformImageSize, Unit> ViewPlatformManifestCommand { get; }
 
-        public MainViewModel(IRegistryService registryService, JsonHighlightService jsonHighlightService)
+        public MainViewModel(
+            IRegistryService registryService, 
+            JsonHighlightService jsonHighlightService,
+            ConnectionService connectionService,
+            ManifestService manifestService,
+            RepositoryService repositoryService,
+            TagService tagService,
+            ArtifactService artifactService,
+            StatusService statusService,
+            ManifestLoadCoordinator manifestLoadCoordinator,
+            ILogger<MainViewModel> logger,
+            ILoggerFactory loggerFactory)
         {
+            System.Diagnostics.Debug.WriteLine("[MainViewModel] ===== CONSTRUCTOR CALLED =====");
+            
             _registryService = registryService;
             _jsonHighlightService = jsonHighlightService;
+            _connectionService = connectionService;
+            _manifestService = manifestService;
+            _repositoryService = repositoryService;
+            _tagService = tagService;
+            _artifactService = artifactService;
+            _statusService = statusService;
+            _manifestLoadCoordinator = manifestLoadCoordinator;
+            _logger = logger;
+
+            // Initialize component ViewModels
+            _repositorySelector = new RepositorySelectorViewModel(
+                _repositoryService, 
+                _artifactService, 
+                loggerFactory.CreateLogger<RepositorySelectorViewModel>());
+            _tagSelector = new TagSelectorViewModel(_tagService);
+
+            // Initialize ArtifactService to coordinate repository/tag selection and tag loading
+            _artifactService.Initialize(_repositorySelector, _tagSelector);
+
+            // Initialize ReferenceHistory with manifestService so it can subscribe to events
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Creating ReferenceHistoryViewModel with manifestService: {_manifestService != null}");
+            _referenceHistory = new ReferenceHistoryViewModel(_manifestService, null);
+            System.Diagnostics.Debug.WriteLine("[MainViewModel] ReferenceHistoryViewModel created");
+
+            // Initialize StatusBar ViewModel (subscribes to StatusService)
+            _statusBar = new StatusBarViewModel(_statusService);
 
             // Context menus no longer need TopLevel provider - they use Application.Current for clipboard access
 
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
-            ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(forceLogin));
-            RefreshRepositoriesCommand = ReactiveCommand.CreateFromTask(RefreshRepositoriesAsync);
-            RefreshTagsCommand = ReactiveCommand.CreateFromTask(RefreshTagsAsync);
+            ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(Connection.RegistryUrl, forceLogin));
             DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
-            LoadManifestByReferenceCommand = ReactiveCommand.CreateFromTask(LoadManifestByReferenceAsync);
+            LoadManifestByReferenceCommand = ReactiveCommand.Create(() =>
+            {
+                var reference = ReferenceHistory.CurrentReference?.Trim();
+                if (!string.IsNullOrWhiteSpace(reference))
+                {
+                    _manifestService!.RequestLoad(reference!, Services.LoadSource.ReferenceBox, forceReload: true);
+                }
+            });
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
 
-            // Setup property change handlers with debouncing
-            this.WhenAnyValue(x => x.SelectedRepository)
-                .WhereNotNull()
-                .Subscribe(repo => ScheduleRepositoryLoad(repo));
+            // Setup property change handlers
+            // Note: SelectedRepository and SelectedTag change handling is now done via component ViewModels firing events
+            // RepositorySelector.RepositoryLoadRequested and TagSelector.TagLoadRequested
 
-            this.WhenAnyValue(x => x.SelectedTag)
-                .WhereNotNull()
-                .Subscribe(tag => ScheduleTagLoad(tag));
-
-            // Auth type observer removed as the UI component was removed
-
-            _repositories.CollectionChanged += RepositoriesCollectionChanged;
-            this.RaisePropertyChanged(nameof(HasRepositories));
-        }
-
-        // Debounced selection methods
-        private void ScheduleRepositoryLoad(Repository repository)
-        {
-            // Cancel any pending timer
-            _repositorySelectionTimer?.Dispose();
-            
-            // Create new timer that will fire after the debounce period
-            _repositorySelectionTimer = new System.Threading.Timer(
-                _ =>
+            // Sync ReferenceHistory.CurrentReference with SelectedTagReference
+            // Use DistinctUntilChanged to prevent circular updates
+            // DO NOT trigger loads here - loads should only happen on explicit user action (Enter key, button click, history selection)
+            this.WhenAnyValue(x => x.ReferenceHistory.CurrentReference)
+                .DistinctUntilChanged()
+                .Subscribe(reference =>
                 {
-                    // Marshal back to UI thread
-                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    if (SelectedTagReference != reference)
                     {
-                        await LoadTagsAsync(repository);
-                    });
-                },
-                null,
-                SelectionDebounceMilliseconds,
-                System.Threading.Timeout.Infinite
-            );
-        }
-
-        private void ScheduleTagLoad(Tag tag)
-        {
-            // Update UI immediately (no network call)
-            SelectedTagReference = tag.FullReference;
-            Referrers.Clear();
-            ReferrersLoading = false;
-            ProgressValue = 0;
-            ArtifactSizeSummary = string.Empty;
-            PlatformImageSizes.Clear();
-            HasPlatformSizes = false;
-            
-            // Cancel any pending timer
-            _tagSelectionTimer?.Dispose();
-            
-            // Create new timer that will fire after the debounce period
-            _tagSelectionTimer = new System.Threading.Timer(
-                _ =>
-                {
-                    // Marshal back to UI thread
-                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
-                    {
-                        await LoadManifestAsync(tag);
-                    });
-                },
-                null,
-                SelectionDebounceMilliseconds,
-                System.Threading.Timeout.Infinite
-            );
-        }
-
-        /// <summary>
-        /// Forces immediate loading of tags for the selected repository (called when Enter is pressed)
-        /// </summary>
-        public void ForceLoadSelectedRepository()
-        {
-            _repositorySelectionTimer?.Dispose();
-            if (SelectedRepository != null)
-            {
-                _ = LoadTagsAsync(SelectedRepository);
-            }
-        }
-
-        /// <summary>
-        /// Forces immediate loading of manifest for the selected tag (called when Enter is pressed)
-        /// </summary>
-        public void ForceLoadSelectedTag()
-        {
-            _tagSelectionTimer?.Dispose();
-            if (SelectedTag != null)
-            {
-                _ = LoadManifestAsync(SelectedTag);
-            }
-        }
-
-        // Property accessors
-        public string RegistryUrl
-        {
-            get => _registryUrl;
-            set => this.RaiseAndSetIfChanged(ref _registryUrl, value);
-        }
-
-        public ObservableCollection<Repository> Repositories
-        {
-            get => _repositories;
-            private set
-            {
-                ArgumentNullException.ThrowIfNull(value);
-
-                if (ReferenceEquals(_repositories, value))
-                {
-                    return;
-                }
-
-                var oldValue = _repositories;
-                this.RaiseAndSetIfChanged(ref _repositories, value);
-                if (oldValue != null)
-                {
-                    oldValue.CollectionChanged -= RepositoriesCollectionChanged;
-                }
-
-                _repositories.CollectionChanged += RepositoriesCollectionChanged;
-                this.RaisePropertyChanged(nameof(HasRepositories));
-            }
-        }
-
-        public ObservableCollection<Repository> FilteredRepositories
-        {
-            get => _filteredRepositories;
-            set => this.RaiseAndSetIfChanged(ref _filteredRepositories, value);
-        }
-
-        public Repository? SelectedRepository
-        {
-            get => _selectedRepository;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _selectedRepository, value);
-
-                if (value != null)
-                {
-                    ExpandRepositoryAncestors(value);
-                    
-                    // Update repository context menu
-                    var repoPath = value.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty);
-                    RepositoryContextMenu.RepositoryName = value.Name;
-                    RepositoryContextMenu.RepositoryPath = repoPath;
-                    RepositoryContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
-                    RepositoryContextMenu.IsActualRepository = value.IsLeaf;
-                }
-            }
-        }
-
-        public ObservableCollection<Tag> Tags
-        {
-            get => _tags;
-            set => this.RaiseAndSetIfChanged(ref _tags, value);
-        }
-
-        public Tag? SelectedTag
-        {
-            get => _selectedTag;
-            set
-            {
-                if (!EqualityComparer<Tag?>.Default.Equals(_selectedTag, value))
-                {
-                    this.RaiseAndSetIfChanged(ref _selectedTag, value);
-                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
-                    
-                    // Update tag context menu
-                    if (value != null)
-                    {
-                        TagContextMenu.TagName = value.Name;
-                        TagContextMenu.Repository = value.Repository?.FullPath.Replace($"{_currentRegistry?.Url}/", string.Empty) ?? string.Empty;
-                        TagContextMenu.RegistryUrl = _currentRegistry?.Url ?? string.Empty;
+                        SelectedTagReference = reference ?? string.Empty;
                     }
-                }
-            }
-        }
+                });
 
-        public TextBlock? ManifestViewer
+            this.WhenAnyValue(x => x.SelectedTagReference)
+                .DistinctUntilChanged()
+                .Subscribe(reference =>
+                {
+                    if (ReferenceHistory.CurrentReference != reference)
+                    {
+                        ReferenceHistory.CurrentReference = reference ?? string.Empty;
+                    }
+                });
+
+
+            // Wire up ConnectionService events
+            _connectionService.ConnectionEstablished += OnConnectionEstablished;
+            _connectionService.ConnectionFailed += OnConnectionFailed;
+
+            // Wire up manifestService events (readonly field assigned from constructor parameter)
+            _manifestService!.LoadRequested += OnManifestLoadRequested;
+            _manifestService.LoadCompleted += OnManifestLoadCompleted;
+
+            ReferenceHistory.LoadRequested += OnReferenceHistoryLoadRequested;
+            
+            // Wire up DigestContextMenu event for "Get Manifest"
+            DigestContextMenu.ManifestRequested += OnDigestManifestRequested;
+            
+            // Wire up ReferrerNodeContextMenu event for "Get Manifest" from referrer tree
+            ReferrerNodeContextMenu.ManifestRequested += OnDigestManifestRequested;
+            
+            // Wire up Connection events
+            Connection.ConnectionRequested += OnConnectionRequested;
+            
+            // Wire up RepositorySelector events
+            RepositorySelector.RepositoryLoadRequested += OnRepositoryLoadRequested;
+            RepositorySelector.RefreshRequested += OnRepositoryRefreshRequested;
+            
+            // Wire up TagSelector events
+            TagSelector.TagLoadRequested += OnTagLoadRequested;
+            TagSelector.RefreshRequested += OnTagRefreshRequested;
+            
+            // Wire up ManifestLoadCoordinator events
+            _manifestLoadCoordinator.RepositorySelectionRequested += OnCoordinatorRepositorySelectionRequested;
+            _manifestLoadCoordinator.TagSelectionRequested += OnCoordinatorTagSelectionRequested;
+        }
+       public TextBlock? ManifestViewer
         {
             get => _manifestViewer;
             set => this.RaiseAndSetIfChanged(ref _manifestViewer, value);
         }
-
-        public string StatusMessage
-        {
-            get => _statusMessage;
-            set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
-        }
-
-        public bool IsStatusError
-        {
-            get => _isStatusError;
-            set => this.RaiseAndSetIfChanged(ref _isStatusError, value);
-        }
-
-        private void SetStatusMessage(string message, bool isError = false)
-        {
-            StatusMessage = message;
-            IsStatusError = isError;
-        }
-
-        public bool IsBusy
-        {
-            get => _isBusy;
-            set
-            {
-                if (this.RaiseAndSetIfChanged(ref _isBusy, value))
-                {
-                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
-                    this.RaisePropertyChanged(nameof(IsProgressVisible));
-
-                    // If we're setting busy to true, make the progress bar indeterminate
-                    // unless we're specifically loading referrers
-                    if (value && !ReferrersLoading)
-                    {
-                        IsProgressIndeterminate = true;
-                    }
-                }
-                // Note: We don't reset IsProgressIndeterminate here when IsBusy becomes false
-                // as that's now handled explicitly in the operation completion code
-            }
-        }
-
         public string SelectedTagReference
         {
             get => _selectedTagReference;
@@ -342,78 +218,13 @@ namespace OrasProject.OrasDesktop.ViewModels
                     // When referrer loading starts, set determinate progress mode
                     if (value)
                     {
-                        IsProgressIndeterminate = false;
-                        ProgressValue = 0;
+                        _statusService.SetProgress(0, isIndeterminate: false);
                     }
-                    // When referrer loading ends, reset progress if not busy with something else
-                    else if (!IsBusy)
+                    // When referrer loading ends, reset progress
+                    else
                     {
-                        ResetProgressIndicators();
+                        _statusService.ResetProgress();
                     }
-                }
-            }
-        }
-
-        public double ProgressValue
-        {
-            get => _progressValue;
-            set
-            {
-                if (!EqualityComparer<double>.Default.Equals(_progressValue, value))
-                {
-                    this.RaiseAndSetIfChanged(ref _progressValue, value);
-                    this.RaisePropertyChanged(nameof(IsProgressVisible));
-                }
-            }
-        }
-
-        public bool IsProgressIndeterminate
-        {
-            get => _isProgressIndeterminate;
-            set
-            {
-                if (this.RaiseAndSetIfChanged(ref _isProgressIndeterminate, value))
-                {
-                    this.RaisePropertyChanged(nameof(IsProgressVisible));
-                }
-            }
-        }
-
-        public bool IsProgressVisible => IsBusy && (IsProgressIndeterminate || ProgressValue > 0);
-
-        private void ResetProgressIndicators(bool clearValues = true)
-        {
-            if (clearValues)
-            {
-                IsProgressIndeterminate = false;
-                ProgressValue = 0;
-            }
-
-            this.RaisePropertyChanged(nameof(IsProgressVisible));
-        }
-
-        public string RepositoryFilterText
-        {
-            get => _repositoryFilterText;
-            set
-            {
-                if (!string.Equals(_repositoryFilterText, value, StringComparison.Ordinal))
-                {
-                    this.RaiseAndSetIfChanged(ref _repositoryFilterText, value);
-                    ApplyRepositoryFilter();
-                }
-            }
-        }
-
-        public string TagFilterText
-        {
-            get => _tagFilterText;
-            set
-            {
-                if (!string.Equals(_tagFilterText, value, StringComparison.Ordinal))
-                {
-                    this.RaiseAndSetIfChanged(ref _tagFilterText, value);
-                    ApplyTagFilter();
                 }
             }
         }
@@ -442,22 +253,80 @@ namespace OrasProject.OrasDesktop.ViewModels
             set => this.RaiseAndSetIfChanged(ref _digestContextMenu, value);
         }
 
-        public TagContextMenuViewModel TagContextMenu
-        {
-            get => _tagContextMenu;
-            set => this.RaiseAndSetIfChanged(ref _tagContextMenu, value);
-        }
-
-        public RepositoryContextMenuViewModel RepositoryContextMenu
-        {
-            get => _repositoryContextMenu;
-            set => this.RaiseAndSetIfChanged(ref _repositoryContextMenu, value);
-        }
-
         public ReferrerNodeContextMenuViewModel ReferrerNodeContextMenu
         {
             get => _referrerNodeContextMenu;
             set => this.RaiseAndSetIfChanged(ref _referrerNodeContextMenu, value);
+        }
+
+        public ReferenceHistoryViewModel ReferenceHistory
+        {
+            get => _referenceHistory;
+            set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+
+                if (ReferenceEquals(_referenceHistory, value))
+                {
+                    return;
+                }
+
+                var previous = _referenceHistory;
+                if (previous != null)
+                {
+                    previous.LoadRequested -= OnReferenceHistoryLoadRequested;
+                }
+
+                _referenceHistory = value;
+                this.RaisePropertyChanged(nameof(ReferenceHistory));
+
+                _referenceHistory.LoadRequested += OnReferenceHistoryLoadRequested;
+            }
+        }
+
+        public ConnectionViewModel Connection
+        {
+            get => _connection;
+            set => this.RaiseAndSetIfChanged(ref _connection, value);
+        }
+
+        public RepositorySelectorViewModel RepositorySelector
+        {
+            get => _repositorySelector;
+            set => this.RaiseAndSetIfChanged(ref _repositorySelector, value);
+        }
+
+        public TagSelectorViewModel TagSelector
+        {
+            get => _tagSelector;
+            set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+
+                if (ReferenceEquals(_tagSelector, value))
+                {
+                    return;
+                }
+
+                var previous = _tagSelector;
+                if (previous != null)
+                {
+                    previous.TagLoadRequested -= OnTagLoadRequested;
+                    previous.RefreshRequested -= OnTagRefreshRequested;
+                }
+
+                _tagSelector = value;
+                this.RaisePropertyChanged(nameof(TagSelector));
+
+                _tagSelector.TagLoadRequested += OnTagLoadRequested;
+                _tagSelector.RefreshRequested += OnTagRefreshRequested;
+            }
+        }
+
+        public StatusBarViewModel StatusBar
+        {
+            get => _statusBar;
+            set => this.RaiseAndSetIfChanged(ref _statusBar, value);
         }
 
         private ReferrerNode? _selectedReferrerNode;
@@ -478,9 +347,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         }
 
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
-        public bool CanModifySelectedTag => _selectedTag != null;
-
-        public bool HasRepositories => _repositories.Count > 0;
+        public bool CanModifySelectedTag => _artifactService.CurrentTag != null;
 
         public int SelectedTabIndex
         {
@@ -501,460 +368,129 @@ namespace OrasProject.OrasDesktop.ViewModels
             return null;
         }
 
+        // Event handlers for component events
+        private void OnConnectionRequested(object? sender, ConnectionRequestedEventArgs e)
+        {
+            // Trigger the connection with the registry URL from the connection control
+            // ConnectionService will handle authentication type
+            _ = ConnectToRegistryAsync(e.RegistryUrl, forceLogin: false);
+        }
+
         // Command implementations
         private async Task ConnectToRegistryAsync()
         {
-            await ConnectToRegistryAsync(false);
+            // Use the URL from the connection control
+            await ConnectToRegistryAsync(Connection.RegistryUrl, false);
         }
 
-        private async Task ConnectToRegistryAsync(bool forceLogin)
+        private async Task ConnectToRegistryAsync(string registryUrl, bool forceLogin)
         {
-            IsBusy = true;
-            SetStatusMessage("Connecting to registry...");
+            _statusService.SetBusy(true);
+            _statusService.SetStatus("Connecting to registry...");
 
             try
             {
-                // Store the original registry credentials in case we need to restore them
-                var originalAuthType = _currentRegistry.AuthenticationType;
-                var originalUsername = _currentRegistry.Username;
-                var originalPassword = _currentRegistry.Password;
-                var originalToken = _currentRegistry.Token;
-
-                _currentRegistry.Url = RegistryUrl;
-
-                // Initialize with anonymous auth first
-                _currentRegistry.AuthenticationType = AuthenticationType.None;
-                _currentRegistry.Username = string.Empty;
-                _currentRegistry.Password = string.Empty;
-                _currentRegistry.Token = string.Empty;
-
-                await _registryService.InitializeAsync(
-                    new RegistryConnection(
-                        _currentRegistry.Url,
-                        _currentRegistry.IsSecure,
-                        AuthType.Anonymous
-                    ),
-                    default
-                );
-
                 var mainWindow = GetMainWindow();
                 if (mainWindow == null)
                 {
-                    SetStatusMessage("Failed to get main window", isError: true);
+                    _statusService.SetStatus("Failed to get main window", isError: true);
                     return;
                 }
 
-                // If Shift is pressed (force login), skip anonymous connection attempt
-                if (forceLogin)
-                {
-                    var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
-                    if (!result.Result)
+                // Use ConnectionService to handle the full connection flow
+                // We provide a callback for requesting credentials via the login dialog
+                var success = await _connectionService.ConnectWithFlowAsync(
+                    registryUrl,
+                    forceLogin,
+                    async (url) =>
                     {
-                        SetStatusMessage("Authentication cancelled", isError: true);
-
-                        // Restore original credentials
-                        _currentRegistry.AuthenticationType = originalAuthType;
-                        _currentRegistry.Username = originalUsername;
-                        _currentRegistry.Password = originalPassword;
-                        _currentRegistry.Token = originalToken;
-
-                        // Reinitialize with original credentials
-                        await _registryService.InitializeAsync(
-                            new RegistryConnection(
-                                _currentRegistry.Url,
-                                _currentRegistry.IsSecure,
-                                _currentRegistry.AuthenticationType switch
-                                {
-                                    AuthenticationType.Basic => AuthType.Basic,
-                                    AuthenticationType.Token => AuthType.Bearer,
-                                    _ => AuthType.Anonymous,
-                                },
-                                _currentRegistry.Username,
-                                _currentRegistry.Password,
-                                _currentRegistry.Token
-                            ),
-                            default
+                        var dialogResult = await LoginDialog.ShowDialog(mainWindow, url);
+                        return new Services.LoginDialogResult(
+                            dialogResult.Result,
+                            dialogResult.AuthType,
+                            dialogResult.Username,
+                            dialogResult.Password,
+                            dialogResult.Token
                         );
+                    },
+                    default
+                );
 
-                        return;
-                    }
-
-                    // Update registry with authentication information
-                    _currentRegistry.AuthenticationType = result.AuthType;
-                    _currentRegistry.Username = result.Username;
-                    _currentRegistry.Password = result.Password;
-                    _currentRegistry.Token = result.Token;
-
-                    // Reinitialize with supplied credentials
-                    await _registryService.InitializeAsync(
-                        new RegistryConnection(
-                            _currentRegistry.Url,
-                            _currentRegistry.IsSecure,
-                            _currentRegistry.AuthenticationType switch
-                            {
-                                AuthenticationType.Basic => AuthType.Basic,
-                                AuthenticationType.Token => AuthType.Bearer,
-                                _ => AuthType.Anonymous,
-                            },
-                            _currentRegistry.Username,
-                            _currentRegistry.Password,
-                            _currentRegistry.Token
-                        ),
-                        default
-                    );
-
-                    // Get repositories with authentication
-                    var repos = await _registryService.ListRepositoriesAsync(default);
-                    var repositories = await BuildRepositoryTreeAsync();
-                    Repositories.Clear();
-                    foreach (var repo in repositories)
-                    {
-                        Repositories.Add(repo);
-                    }
-                    ApplyRepositoryFilter();
-                    SetStatusMessage("Connected to registry (authenticated)");
-                    RegistryConnected?.Invoke(this, EventArgs.Empty);
-                    return;
-                }
-
-                try
+                if (!success)
                 {
-                    // Try to connect anonymously first
-                    var repos = await _registryService.ListRepositoriesAsync(default);
-                    var connected = repos.Count >= 0; // if call returns without exception treat as connected
-
-                    if (connected)
+                    // Connection was cancelled or failed - error messages already handled by ConnectionService events
+                    if (_logger.IsEnabled(LogLevel.Information))
                     {
-                        // Anonymous connection successful, load repositories
-                        var repositories = await BuildRepositoryTreeAsync();
-                        Repositories.Clear();
-                        foreach (var repo in repositories)
-                        {
-                            Repositories.Add(repo);
-                        }
-                        ApplyRepositoryFilter();
-                        SetStatusMessage("Connected to registry (anonymous)");
-                        RegistryConnected?.Invoke(this, EventArgs.Empty);
+                        _logger.LogInformation("Connection to {Registry} was not successful", registryUrl);
                     }
                 }
-                catch (Exception)
-                {
-                    // Anonymous connection failed, prompt for authentication
-                    var result = await LoginDialog.ShowDialog(mainWindow, RegistryUrl);
-                    if (!result.Result)
-                    {
-                        SetStatusMessage("Authentication cancelled", isError: true);
-
-                        // Restore original credentials
-                        _currentRegistry.AuthenticationType = originalAuthType;
-                        _currentRegistry.Username = originalUsername;
-                        _currentRegistry.Password = originalPassword;
-                        _currentRegistry.Token = originalToken;
-
-                        // Reinitialize with original credentials
-                        await _registryService.InitializeAsync(
-                            new RegistryConnection(
-                                _currentRegistry.Url,
-                                _currentRegistry.IsSecure,
-                                _currentRegistry.AuthenticationType switch
-                                {
-                                    AuthenticationType.Basic => AuthType.Basic,
-                                    AuthenticationType.Token => AuthType.Bearer,
-                                    _ => AuthType.Anonymous,
-                                },
-                                _currentRegistry.Username,
-                                _currentRegistry.Password,
-                                _currentRegistry.Token
-                            ),
-                            default
-                        );
-
-                        return;
-                    }
-
-                    // Update registry with authentication information
-                    _currentRegistry.AuthenticationType = result.AuthType;
-                    _currentRegistry.Username = result.Username;
-                    _currentRegistry.Password = result.Password;
-                    _currentRegistry.Token = result.Token;
-
-                    // Reinitialize with supplied credentials
-                    await _registryService.InitializeAsync(
-                        new RegistryConnection(
-                            _currentRegistry.Url,
-                            _currentRegistry.IsSecure,
-                            _currentRegistry.AuthenticationType switch
-                            {
-                                AuthenticationType.Basic => AuthType.Basic,
-                                AuthenticationType.Token => AuthType.Bearer,
-                                _ => AuthType.Anonymous,
-                            },
-                            _currentRegistry.Username,
-                            _currentRegistry.Password,
-                            _currentRegistry.Token
-                        ),
-                        default
-                    );
-
-                    // Get repositories with authentication
-                    var repos = await _registryService.ListRepositoriesAsync(default);
-                    var repositories = await BuildRepositoryTreeAsync();
-                    Repositories.Clear();
-                    foreach (var repo in repositories)
-                    {
-                        Repositories.Add(repo);
-                    }
-                    ApplyRepositoryFilter();
-                    SetStatusMessage("Connected to registry (authenticated)");
-                    RegistryConnected?.Invoke(this, EventArgs.Empty);
-                }
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                SetStatusMessage(regEx.Message, isError: true);
+                // Success case - ConnectionEstablished event will be fired by ConnectionService
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error connecting to registry: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error connecting to registry: {ex.Message}", isError: true);
             }
             finally
             {
-                IsBusy = false;
-                ResetProgressIndicators();
+                _statusService.SetBusy(false);
+                _statusService.ResetProgress();
             }
+        }
+
+        /// <summary>
+        /// Event handler for successful connection to registry
+        /// Note: RepositoryService automatically loads repositories via its ConnectionEstablished subscription
+        /// </summary>
+        private void OnConnectionEstablished(object? sender, ConnectionEstablishedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Connection established to registry: {Registry} (Authenticated: {IsAuthenticated})", 
+                    e.Registry.Url, e.IsAuthenticated);
+            }
+
+            // Update artifact service with the connected registry
+            _artifactService.SetRegistry(e.Registry);
+
+            // Clear status - RepositoryService will set its own status while loading
+            _statusService.ClearStatus();
+            
+            RegistryConnected?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Event handler for failed connection to registry
+        /// </summary>
+        private void OnConnectionFailed(object? sender, ConnectionFailedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Error))
+            {
+                _logger.LogError(e.Exception, "Connection failed to registry: {Registry}", e.RegistryUrl);
+            }
+
+            _statusService.SetStatus($"Connection failed: {e.Exception.Message}", isError: true);
         }
 
         // LoginToRegistryAsync method removed as functionality merged into ConnectToRegistryAsync
 
-        private async Task LoadTagsAsync(Repository repository)
-        {
-            if (repository == null)
-            {
-                return;
-            }
-
-            IsBusy = true;
-            SetStatusMessage($"Loading tags for {repository.Name}...");
-
-            try
-            {
-                var tagNames = await _registryService.ListTagsAsync(
-                    repository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty),
-                    default
-                );
-                var tags = new List<Tag>();
-                foreach (var name in tagNames)
-                {
-                    tags.Add(
-                        new Tag
-                        {
-                            Name = name,
-                            Repository = repository,
-                            CreatedAt = DateTimeOffset.Now,
-                        }
-                    );
-                }
-
-                // Sort tags by name using IComparable implementation
-                tags.Sort();
-
-                // Store the currently selected tag name if any
-                string? selectedTagName = SelectedTag?.Name;
-
-                _allTags = tags;
-                ApplyTagFilter(selectedTagName);
-
-                // Digest resolution removed for performance; resolved only when required for delete.
-
-                SetStatusMessage($"Loaded {tags.Count} tags for {repository.Name}");
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                SetStatusMessage(regEx.Message, isError: true);
-            }
-            catch (Exception ex)
-            {
-                SetStatusMessage($"Error loading tags: {ex.Message}", isError: true);
-            }
-            finally
-            {
-                IsBusy = false;
-                ResetProgressIndicators();
-            }
-        }
-
-        private async Task RefreshRepositoriesAsync()
-        {
-            IsBusy = true;
-            SetStatusMessage("Refreshing repositories...");
-
-            try
-            {
-                var previousRepositoryPath = SelectedRepository?.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
-                    string.Empty
-                );
-                var previousSelectedTag = SelectedTag;
-
-                var repositories = await BuildRepositoryTreeAsync();
-
-                Repositories.Clear();
-                foreach (var repo in repositories)
-                {
-                    Repositories.Add(repo);
-                }
-
-                ApplyRepositoryFilter();
-
-                if (!string.IsNullOrEmpty(previousRepositoryPath))
-                {
-                    FindAndSelectRepository(previousRepositoryPath);
-
-                    var currentPath = SelectedRepository?.FullPath.Replace(
-                        $"{_currentRegistry.Url}/",
-                        string.Empty
-                    );
-
-                    if (string.Equals(currentPath, previousRepositoryPath, StringComparison.OrdinalIgnoreCase) && SelectedRepository != null)
-                    {
-                        if (previousSelectedTag != null)
-                        {
-                            await LoadTagsAsync(SelectedRepository);
-                            var tagToSelect = Tags.FirstOrDefault(t => t.Name == previousSelectedTag.Name);
-                            if (tagToSelect != null)
-                            {
-                                SelectedTag = tagToSelect;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        _allTags.Clear();
-                        Tags.Clear();
-                        SelectedTag = null;
-                        SelectedRepository = null;
-                        CurrentManifest = null;
-                        ManifestViewer = null;
-                        ArtifactSizeSummary = string.Empty;
-                        PlatformImageSizes.Clear();
-                        HasPlatformSizes = false;
-                    }
-                }
-                else
-                {
-                    _allTags.Clear();
-                    Tags.Clear();
-                    SelectedTag = null;
-                    SelectedRepository = null;
-                    CurrentManifest = null;
-                    ManifestViewer = null;
-                    ArtifactSizeSummary = string.Empty;
-                    PlatformImageSizes.Clear();
-                    HasPlatformSizes = false;
-                }
-
-                SetStatusMessage("Repositories refreshed");
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                SetStatusMessage(regEx.Message, isError: true);
-            }
-            catch (Exception ex)
-            {
-                SetStatusMessage($"Error refreshing repositories: {ex.Message}", isError: true);
-            }
-            finally
-            {
-                IsBusy = false;
-                ResetProgressIndicators();
-            }
-        }
+        // Note: LoadTagsAsync method removed - tag loading now handled by tagService service
 
         private async Task RefreshTagsAsync()
         {
-            if (SelectedRepository == null)
+            if (_artifactService.CurrentRepository == null)
             {
-                SetStatusMessage("No repository selected", isError: true);
+                _statusService.SetStatus("No repository selected", isError: true);
                 return;
             }
 
-            await LoadTagsAsync(SelectedRepository);
-        }
-
-        private async Task LoadManifestAsync(Tag tag)
-        {
-            if (tag == null)
+            if (_artifactService.CurrentRegistry == null)
             {
+                _statusService.SetStatus("Not connected to a registry", isError: true);
                 return;
             }
 
-            IsBusy = true;
-            SetStatusMessage($"Loading manifest for {tag.Name}...");
-
-            try
-            {
-                var repoPath = tag.Repository!.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
-                    string.Empty
-                );
-                _currentRepositoryPath = repoPath; // Store for referrer context menu
-                
-                var manifest = await _registryService.GetManifestByTagAsync(
-                    repoPath,
-                    tag.Name,
-                    default
-                );
-                CurrentManifest = new Manifest
-                {
-                    RawContent = manifest.Json,
-                    Digest = manifest.Digest,
-                    Tag = tag,
-                    MediaType = manifest.MediaType,
-                };
-                ManifestContent = CurrentManifest.RawContent;
-
-                // Update digest context menu
-                DigestContextMenu.Digest = CurrentManifest.Digest;
-                DigestContextMenu.Repository = repoPath;
-                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
-
-                // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
-
-                // Calculate artifact size information
-                await CalculateArtifactSizeAsync(repoPath, manifest);
-
-                // Kick off referrers load (fire and forget, separate status message)
-                ProgressValue = 0;
-                IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
-
-                SetStatusMessage($"Loaded manifest for {tag.Name}");
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                SetStatusMessage(regEx.Message, isError: true);
-                ManifestContent = string.Empty;
-                ManifestViewer = null;
-            }
-            catch (Exception ex)
-            {
-                SetStatusMessage($"Error loading manifest: {ex.Message}", isError: true);
-                ManifestContent = string.Empty;
-                ManifestViewer = null;
-            }
-            finally
-            {
-                IsBusy = false;
-                if (!ReferrersLoading)
-                {
-                    ResetProgressIndicators();
-                }
-                else
-                {
-                    ResetProgressIndicators(clearValues: false);
-                }
-            }
+            _tagService.OnRepositorySelected(_artifactService.CurrentRepository, _artifactService.CurrentRegistry);
+            await Task.CompletedTask; // Keep async signature for command binding
         }
 
         /// <summary>
@@ -996,28 +532,27 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
-        private async Task LoadReferrersAsync(string repositoryPath, string digest)
+        private async Task LoadReferrersAsync(string repositoryPath, string digest, string reference)
         {
             ReferrersLoading = true;
-            IsProgressIndeterminate = false;
-            ProgressValue = 0;
+            _statusService.SetProgress(0, isIndeterminate: false);
             try
             {
                 // Use a progress handler to update both the status message and progress bar
                 var progress = new Progress<int>(count =>
                 {
-                    SetStatusMessage($"Loading referrers ({count})...");
+                    _statusService.SetStatus($"Loading referrers ({count}) for {reference}...");
                     // Set an indeterminate progress at first to show activity
                     if (count == 1)
                     {
-                        ProgressValue = 0;
+                        _statusService.SetProgress(0);
                     }
                     else
                     {
                         // Once we start getting counts, update the progress
                         // We don't know the total in advance, so we'll use a fixed scale up to 100
                         // and clamp it between 0-100
-                        ProgressValue = Math.Min(count, 100);
+                        _statusService.SetProgress(Math.Min(count, 100));
                     }
                 });
                 var nodes = await _registryService.GetReferrersRecursiveAsync(repositoryPath, digest, progress, default);
@@ -1035,18 +570,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                     foreach (var c in n.Children) CountNode(c);
                 }
                 foreach (var root in nodes) CountNode(root);
-                SetStatusMessage($"Loaded referrers ({total})");
+                string referrerWord = total == 1 ? "referrer" : "referrers";
+                _statusService.SetStatus($"Loaded {total} {referrerWord} for {reference}");
                 // Set progress to 100% when complete
-                ProgressValue = 100;
+                _statusService.SetProgress(100);
             }
             catch (Services.RegistryOperationException regEx)
             {
-                SetStatusMessage(regEx.Message, isError: true);
+                _statusService.SetStatus(regEx.Message, isError: true);
                 Referrers.Clear();
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error loading referrers: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error loading referrers: {ex.Message}", isError: true);
                 Referrers.Clear();
             }
             finally
@@ -1061,40 +597,36 @@ namespace OrasProject.OrasDesktop.ViewModels
                         SelectedTabIndex = 0; // Switch to Manifest tab
                     }
                 });
-                
-                // Reset progress bar state if no other operation is busy
-                if (!IsBusy)
-                {
-                    ResetProgressIndicators();
-                }
-                else
-                {
-                    ResetProgressIndicators(clearValues: false);
-                }
             }
         }
 
         private async Task DeleteManifestAsync()
         {
-            if (SelectedTag == null)
+            if (_artifactService.CurrentTag == null)
             {
-                SetStatusMessage("No tag selected", isError: true);
+                _statusService.SetStatus("No tag selected", isError: true);
                 return;
             }
 
             var mainWindow = GetMainWindow();
             if (mainWindow == null)
             {
-                SetStatusMessage("Failed to get main window", isError: true);
+                _statusService.SetStatus("Failed to get main window", isError: true);
+                return;
+            }
+
+            if (_artifactService.CurrentRegistry == null)
+            {
+                _statusService.SetStatus("No registry connected", isError: true);
                 return;
             }
 
             // Calculate the full reference for the manifest
-            string manifestRepoPath = SelectedTag.Repository!.FullPath.Replace(
-                $"{_currentRegistry.Url}/",
+            string manifestRepoPath = _artifactService.CurrentTag.Repository!.FullPath.Replace(
+                $"{_artifactService.CurrentRegistry.Url}/",
                 string.Empty
             );
-            string fullReference = $"{_currentRegistry.Url}/{manifestRepoPath}:{SelectedTag.Name}";
+            string fullReference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}:{_artifactService.CurrentTag.Name}";
 
             // Show delete confirmation dialog
             var dialog = new DeleteManifestDialog(fullReference);
@@ -1105,16 +637,16 @@ namespace OrasProject.OrasDesktop.ViewModels
                 return;
             }
 
-            IsBusy = true;
-            SetStatusMessage($"Deleting manifest for {SelectedTag.Name}...");
+            _statusService.SetBusy(true);
+            _statusService.SetStatus($"Deleting manifest for {_artifactService.CurrentTag.Name}...");
 
             // Store the tag name before deletion to use in status message later
-            string tagName = SelectedTag.Name;
+            string tagName = _artifactService.CurrentTag.Name;
 
             try
             {
-                var repoPath = SelectedTag.Repository!.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
+                var repoPath = _artifactService.CurrentTag.Repository!.FullPath.Replace(
+                    $"{_artifactService.CurrentRegistry.Url}/",
                     string.Empty
                 );
 
@@ -1128,51 +660,51 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Refresh tags
                 await RefreshTagsAsync();
 
-                SetStatusMessage($"Deleted manifest for {tagName}");
+                _statusService.SetStatus($"Deleted manifest for {tagName}");
             }
             catch (Services.RegistryOperationException regEx)
             {
-                SetStatusMessage(regEx.Message, isError: true);
+                _statusService.SetStatus(regEx.Message, isError: true);
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error deleting manifest: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error deleting manifest: {ex.Message}", isError: true);
             }
             finally
             {
-                IsBusy = false;
-                ResetProgressIndicators();
+                _statusService.SetBusy(false);
+                _statusService.ResetProgress();
             }
         }
 
         private async Task CopyReferenceToClipboardAsync()
         {
-            if (SelectedTag == null)
+            if (_artifactService.CurrentTag == null)
             {
-                SetStatusMessage("No tag selected", isError: true);
+                _statusService.SetStatus("No tag selected", isError: true);
                 return;
             }
 
             try
             {
                 // Get reference without the "Reference: " prefix
-                string reference = SelectedTag.FullReference;
+                string reference = _artifactService.CurrentTag.FullReference;
 
                 // Copy to clipboard
                 var topLevel = TopLevel.GetTopLevel(GetMainWindow());
                 if (topLevel != null)
                 {
                     await topLevel.Clipboard!.SetTextAsync(reference);
-                    SetStatusMessage("Reference copied to clipboard");
+                    _statusService.SetStatus("Reference copied to clipboard");
                 }
                 else
                 {
-                    SetStatusMessage("Failed to access clipboard", isError: true);
+                    _statusService.SetStatus("Failed to access clipboard", isError: true);
                 }
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error copying reference: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error copying reference: {ex.Message}", isError: true);
             }
         }
 
@@ -1180,13 +712,13 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SelectedTagReference))
             {
-                SetStatusMessage("Reference is empty", isError: true);
+                _statusService.SetStatus("Reference is empty", isError: true);
                 return;
             }
 
-            IsBusy = true;
+            _statusService.SetBusy(true);
             string originalReference = SelectedTagReference.Trim();
-            SetStatusMessage($"Processing reference {originalReference}...");
+            _statusService.SetStatus($"Processing reference {originalReference}...");
 
             try
             {
@@ -1196,19 +728,19 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     if (!Reference.TryParse(originalReference, out parsedRef))
                     {
-                        SetStatusMessage("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
+                        _statusService.SetStatus("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
                         return;
                     }
                 }
                 catch (FormatException ex)
                 {
                     // Catch InvalidResponseException and other format exceptions from ORAS library
-                    SetStatusMessage($"Error parsing reference: {ex.Message}", isError: true);
+                    _statusService.SetStatus($"Error parsing reference: {ex.Message}", isError: true);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    SetStatusMessage($"Unexpected error parsing reference: {ex.Message}", isError: true);
+                    _statusService.SetStatus($"Unexpected error parsing reference: {ex.Message}", isError: true);
                     return;
                 }
                 
@@ -1216,7 +748,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                     string.IsNullOrEmpty(parsedRef.Registry) || 
                     string.IsNullOrEmpty(parsedRef.Repository))
                 {
-                    SetStatusMessage("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
+                    _statusService.SetStatus("Invalid reference format. Expected: registry/repository:tag or registry/repository@digest", isError: true);
                     return;
                 }
 
@@ -1231,185 +763,96 @@ namespace OrasProject.OrasDesktop.ViewModels
                 string tagOrDigest = contentRef ?? "latest";
 
                 // Check if we need to connect to a different registry
-                bool needToChangeRegistry = !string.Equals(registry, _currentRegistry.Url, StringComparison.OrdinalIgnoreCase);
+                bool needToChangeRegistry = !string.Equals(registry, _artifactService.CurrentRegistry?.Url, StringComparison.OrdinalIgnoreCase);
 
                 if (needToChangeRegistry)
                 {
-                    // Update the registry URL
-                    RegistryUrl = registry;
+                    // Update the connection control's registry URL
+                    Connection.RegistryUrl = registry;
 
-                    // Connect to the new registry
-                    SetStatusMessage($"Connecting to registry {registry}...");
+                    // Connect to the new registry using ConnectionService
+                    _statusService.SetStatus($"Connecting to registry {registry}...");
 
-                    // Initialize with anonymous auth first
-                    _currentRegistry.Url = registry;
-                    _currentRegistry.AuthenticationType = AuthenticationType.None;
-                    _currentRegistry.Username = string.Empty;
-                    _currentRegistry.Password = string.Empty;
-                    _currentRegistry.Token = string.Empty;
+                    var mainWindow = GetMainWindow();
+                    if (mainWindow == null)
+                    {
+                        _statusService.SetStatus("Failed to get main window", isError: true);
+                        return;
+                    }
 
+                    var success = await _connectionService.ConnectWithFlowAsync(
+                        registry,
+                        forceLogin: false,
+                        async (url) =>
+                        {
+                            var dialogResult = await LoginDialog.ShowDialog(mainWindow, url);
+                            return new Services.LoginDialogResult(
+                                dialogResult.Result,
+                                dialogResult.AuthType,
+                                dialogResult.Username,
+                                dialogResult.Password,
+                                dialogResult.Token
+                            );
+                        },
+                        default,
+                        // Test connection by resolving the specific tag (cheaper than listing all repos)
+                        repository: repository,
+                        tag: isDigestReference ? null : tagOrDigest
+                    );
+
+                    if (!success)
+                    {
+                        _statusService.SetStatus("Connection cancelled or failed", isError: true);
+                        return;
+                    }
+
+                    // ConnectionEstablished event will update ArtifactService and load repositories
+                }
+
+                // Ensure repositories are loaded before trying to navigate
+                // If no repositories are loaded yet, load them first
+                if (RepositorySelector.Repositories.Count == 0 && _artifactService.CurrentRegistry != null)
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("No repositories loaded yet, loading repositories for {Registry}...", _artifactService.CurrentRegistry.Url);
+                    }
+                    
+                    _statusService.SetStatus($"Loading repositories...");
+                    
                     try
                     {
-                        await _registryService.InitializeAsync(
-                            new RegistryConnection(
-                                _currentRegistry.Url,
-                                _currentRegistry.IsSecure,
-                                AuthType.Anonymous
-                            ),
-                            default
-                        );
-
-                        // Try to anonymously connect
-                        try
-                        {
-                            var repos = await _registryService.ListRepositoriesAsync(default);
-                            // Anonymous connection successful, load repositories
-                            var repositories = await BuildRepositoryTreeAsync();
-
-                            // Update the UI
-                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                            {
-                                Repositories.Clear();
-                                foreach (var repo in repositories)
-                                {
-                                    Repositories.Add(repo);
-                                }
-                                ApplyRepositoryFilter();
-                            });
-
-                            SetStatusMessage($"Connected to registry {registry} (anonymous)");
-                        }
-                        catch (Exception)
-                        {
-                            // Anonymous connection failed, prompt for authentication
-                            var mainWindow = GetMainWindow();
-                            if (mainWindow == null)
-                            {
-                                SetStatusMessage("Failed to get main window", isError: true);
-                                return;
-                            }
-
-                            var result = await LoginDialog.ShowDialog(mainWindow, registry);
-                            if (!result.Result)
-                            {
-                                SetStatusMessage("Authentication cancelled", isError: true);
-                                return;
-                            }
-
-                            // Update registry with authentication information
-                            _currentRegistry.AuthenticationType = result.AuthType;
-                            _currentRegistry.Username = result.Username;
-                            _currentRegistry.Password = result.Password;
-                            _currentRegistry.Token = result.Token;
-
-                            // Reinitialize with supplied credentials
-                            await _registryService.InitializeAsync(
-                                new RegistryConnection(
-                                    _currentRegistry.Url,
-                                    _currentRegistry.IsSecure,
-                                    _currentRegistry.AuthenticationType switch
-                                    {
-                                        AuthenticationType.Basic => AuthType.Basic,
-                                        AuthenticationType.Token => AuthType.Bearer,
-                                        _ => AuthType.Anonymous,
-                                    },
-                                    _currentRegistry.Username,
-                                    _currentRegistry.Password,
-                                    _currentRegistry.Token
-                                ),
-                                default
-                            );
-
-                            try
-                            {
-                                // Get repositories with authentication
-                                var repos = await _registryService.ListRepositoriesAsync(default);
-                                var repositories = await BuildRepositoryTreeAsync();
-
-                                // Update the UI
-                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                                {
-                                    Repositories.Clear();
-                                    foreach (var repo in repositories)
-                                    {
-                                        Repositories.Add(repo);
-                                    }
-                                    ApplyRepositoryFilter();
-                                });
-
-                                SetStatusMessage($"Connected to registry {registry} (authenticated)");
-                            }
-                            catch (Exception ex)
-                            {
-                                SetStatusMessage($"Connected to registry {registry}, but couldn't fetch repositories: {ex.Message}", isError: true);
-                                // Clear repositories since we can't fetch them
-                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                                {
-                                    Repositories.Clear();
-                                    ApplyRepositoryFilter();
-                                });
-                            }
-                        }
+                        await _repositoryService.RefreshRepositoriesAsync(default);
+                        
+                        // Wait a bit for the UI to update
+                        await Task.Delay(100);
                     }
                     catch (Exception ex)
                     {
-                        SetStatusMessage($"Error connecting to registry {registry}: {ex.Message}", isError: true);
-                        return;
+                        if (_logger.IsEnabled(LogLevel.Warning))
+                        {
+                            _logger.LogWarning(ex, "Failed to load repositories while processing reference {Reference}.", originalReference);
+                        }
+                        // Continue anyway - user might still be able to load the manifest
                     }
                 }
 
-                // Now fetch tags for the repository if possible
+                // Now fetch tags for the repository if possible (TagService will handle actual loading)
                 try
                 {
-                    SetStatusMessage($"Loading tags for repository {repository}...");
-                    var tagNames = await _registryService.ListTagsAsync(repository, default);
-
-                    // Create a tag collection
-                    var tags = new List<Tag>();
-
-                    // Create a dummy repository to hold the tags
-                    var dummyRepo = new Repository
+                    // Try to find and select the repository in the tree which will trigger tag loading via TagService
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                     {
-                        Name = repository,
-                        FullPath = $"{_currentRegistry.Url}/{repository}",
-                        Registry = _currentRegistry,
-                        IsLeaf = true
-                    };
-
-                    foreach (var name in tagNames)
-                    {
-                        tags.Add(
-                            new Tag
-                            {
-                                Name = name,
-                                Repository = dummyRepo,
-                                CreatedAt = DateTimeOffset.Now,
-                            }
-                        );
-                    }
-
-                    // Sort tags by name
-                    tags.Sort();
-
-                    // Update UI
-                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        _allTags = tags;
-                        ApplyTagFilter();
-
-                        // Try to find and select the repository in the tree
-                        FindAndSelectRepository(repository);
+                        await RepositorySelector.FindAndSelectRepositoryAsync(repository);
                     });
-
-                    SetStatusMessage($"Loaded {tags.Count} tags for {repository}");
                 }
                 catch (Exception ex)
                 {
-                    SetStatusMessage($"Error loading tags for {repository}: {ex.Message}", isError: true);
+                    _statusService.SetStatus($"Error selecting repository {repository}: {ex.Message}", isError: true);
                 }
 
                 // Now load the manifest
-                SetStatusMessage($"Loading manifest for {originalReference}...");
+                _statusService.SetStatus($"Loading manifest for {originalReference}...");
 
                 ManifestResult manifest;
 
@@ -1445,7 +888,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
                 DigestContextMenu.Repository = repository;
-                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
+                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
@@ -1454,12 +897,16 @@ namespace OrasProject.OrasDesktop.ViewModels
                 await CalculateArtifactSizeAsync(repository, manifest);
 
                 // Load referrers
-                ProgressValue = 0;
-                IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
+                _statusService.SetProgress(0);
+                // Progress indeterminate handled by SetProgress
+                _ = LoadReferrersAsync(repository, CurrentManifest.Digest, originalReference);
 
                 // IMPORTANT: Preserve the original pasted reference instead of resetting it
                 SelectedTagReference = originalReference;
+
+                // Update ArtifactService with the current reference (digest or tag)
+                // This keeps the artifact context in sync with what's displayed
+                _artifactService.SetReference(originalReference, isDigestReference);
 
                 // NOTE: We intentionally do NOT select the matching tag in the UI here
                 // because doing so triggers the SelectedTag property changed event which
@@ -1467,24 +914,28 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // we just loaded from the reference. The user's intended manifest is already loaded.
                 // await TrySelectMatchingTag(repository, tagOrDigest, isDigestReference);
 
-                SetStatusMessage($"Loaded manifest for {originalReference}");
+                // Notify manifestService that load completed with the current source
+                // Note: History is automatically updated by ReferenceHistoryViewModel subscribing to LoadCompleted event
+                _manifestService.NotifyLoadCompleted(originalReference, _manifestService.CurrentLoadSource);
+
+                _statusService.SetStatus($"Loaded manifest for {originalReference}");
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error processing reference: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error processing reference: {ex.Message}", isError: true);
                 ManifestContent = string.Empty;
                 ManifestViewer = null;
             }
             finally
             {
-                IsBusy = false;
+                _statusService.SetBusy(false);
                 if (!ReferrersLoading)
                 {
-                    ResetProgressIndicators();
+                    _statusService.ResetProgress();
                 }
                 else
                 {
-                    ResetProgressIndicators(clearValues: false);
+                    // Progress reset handled by StatusService
                 }
             }
         }
@@ -1494,19 +945,19 @@ namespace OrasProject.OrasDesktop.ViewModels
         /// </summary>
         private async Task ViewPlatformManifestAsync(PlatformImageSize platformSize)
         {
-            if (string.IsNullOrEmpty(platformSize.Digest) || SelectedRepository == null)
+            if (string.IsNullOrEmpty(platformSize.Digest) || _artifactService.CurrentRepository == null)
             {
-                SetStatusMessage("Platform digest not available", isError: true);
+                _statusService.SetStatus("Platform digest not available", isError: true);
                 return;
             }
 
-            IsBusy = true;
-            SetStatusMessage($"Loading manifest for platform {platformSize.Platform}...");
+            _statusService.SetBusy(true);
+            _statusService.SetStatus($"Loading manifest for platform {platformSize.Platform}...");
 
             try
             {
-                var repoPath = SelectedRepository.FullPath.Replace(
-                    $"{_currentRegistry.Url}/",
+                var repoPath = _artifactService.CurrentRepository.FullPath.Replace(
+                    $"{_artifactService.CurrentRegistry?.Url}/",
                     string.Empty
                 );
 
@@ -1522,7 +973,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     RawContent = manifest.Json,
                     Digest = manifest.Digest,
-                    Tag = SelectedTag,
+                    Tag = _artifactService.CurrentTag,
                     MediaType = manifest.MediaType,
                 };
 
@@ -1532,39 +983,41 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
                 DigestContextMenu.Repository = repoPath;
-                DigestContextMenu.RegistryUrl = _currentRegistry.Url;
+                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
                 // Update the selected tag reference to use the digest of the platform-specific manifest
-                if (SelectedTag != null)
+                string platformReference = SelectedTagReference;
+                if (_artifactService.CurrentTag != null && _artifactService.CurrentRegistry != null)
                 {
-                    string repository = SelectedTag.Repository!.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
-                    SelectedTagReference = $"{_currentRegistry.Url}/{repository}@{platformSize.Digest}";
+                    string repository = _artifactService.CurrentTag.Repository!.FullPath.Replace($"{_artifactService.CurrentRegistry.Url}/", string.Empty);
+                    platformReference = $"{_artifactService.CurrentRegistry.Url}/{repository}@{platformSize.Digest}";
+                    SelectedTagReference = platformReference;
                 }
 
                 // Kick off referrers load (fire and forget, separate status message)
-                ProgressValue = 0;
-                IsProgressIndeterminate = false;
-                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
+                _statusService.SetProgress(0);
+                // Progress indeterminate handled by SetProgress
+                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest, platformReference);
 
-                SetStatusMessage($"Loaded manifest for platform {platformSize.Platform}");
+                _statusService.SetStatus($"Loaded manifest for platform {platformSize.Platform}");
             }
             catch (Exception ex)
             {
-                SetStatusMessage($"Error loading platform manifest: {ex.Message}", isError: true);
+                _statusService.SetStatus($"Error loading platform manifest: {ex.Message}", isError: true);
             }
             finally
             {
-                IsBusy = false;
+                _statusService.SetBusy(false);
                 if (!ReferrersLoading)
                 {
-                    ResetProgressIndicators();
+                    _statusService.ResetProgress();
                 }
                 else
                 {
-                    ResetProgressIndicators(clearValues: false);
+                    // Progress reset handled by StatusService
                 }
             }
         }
@@ -1576,327 +1029,378 @@ namespace OrasProject.OrasDesktop.ViewModels
 {
     public partial class MainViewModel
     {
-        private async Task<List<Repository>> BuildRepositoryTreeAsync()
+        /// <summary>
+        /// Attempts to navigate the UI (repository and tag selection) when a reference is selected from history.
+        /// Only navigates if the registry matches the current registry.
+        /// </summary>
+        private async Task TryNavigateToReferenceAsync(string reference, bool selectTag = true)
         {
-            var list = await _registryService.ListRepositoriesAsync(default);
-            var root = new List<Repository>();
-            var dict = new Dictionary<string, Repository>(StringComparer.OrdinalIgnoreCase);
-            foreach (var full in list)
+            if (_logger.IsEnabled(LogLevel.Information))
             {
-                var segments = full.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                string path = string.Empty;
-                Repository? parent = null;
-                for (int i = 0; i < segments.Length; i++)
+                _logger.LogInformation("Trying to navigate to {Reference} after load from {Source}. SelectTag: {SelectTag}", reference, _manifestService.CurrentLoadSource, selectTag);
+            }
+            if (string.IsNullOrWhiteSpace(reference) || _artifactService.CurrentRegistry == null)
+                return;
+
+            try
+            {
+                // Parse the reference to extract registry, repository, and tag/digest
+                var parts = reference.Split('/', 2);
+                if (parts.Length < 2)
+                    return; // Invalid format
+
+                var registryHost = parts[0];
+                var remainder = parts[1];
+
+                // Check if the registry matches the current one
+                if (!_artifactService.CurrentRegistry.Url.Contains(registryHost, StringComparison.OrdinalIgnoreCase))
+                    return; // Different registry, don't navigate
+
+                // Check if this is a digest reference
+                bool isDigest = remainder.Contains("@sha256:") || remainder.Contains("@sha512:");
+
+                // Skip navigation for digest references - they don't have a corresponding tag to select
+                // and navigating to the repository might incorrectly select a previously selected tag
+                if (isDigest)
                 {
-                    path = path.Length == 0 ? segments[i] : path + "/" + segments[i];
-                    if (!dict.TryGetValue(path, out var repo))
+                    if (_logger.IsEnabled(LogLevel.Information))
                     {
-                        repo = new Repository
+                        _logger.LogInformation("Skipping UI navigation for digest reference {Reference}.", reference);
+                    }
+                    return;
+                }
+
+                // Split repository and tag reference
+                string repository;
+                string tagOrDigest;
+                var tagParts = remainder.Split(':', 2);
+                repository = tagParts[0];
+                tagOrDigest = tagParts.Length > 1 ? tagParts[1] : "latest";
+
+                // Try to find and select the repository in the tree
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    // Clear tag filter if needed
+                    if (!string.IsNullOrEmpty(TagSelector.FilterText))
+                    {
+                        TagSelector.FilterText = string.Empty;
+                        if (_logger.IsEnabled(LogLevel.Information))
                         {
-                            Name = segments[i],
-                            FullPath = $"{_currentRegistry.Url}/{path}",
-                            Parent = parent,
-                            Registry = _currentRegistry,
-                            IsLeaf = i == segments.Length - 1,
-                        };
-                        dict[path] = repo;
-                        if (parent != null)
-                            parent.Children.Add(repo);
-                        else
-                            root.Add(repo);
+                            _logger.LogInformation("Cleared tag filter to ensure navigation to {Tag}.", tagOrDigest);
+                        }
                     }
-                    parent = repo;
-                }
-            }
-
-            // Sort all repositories recursively
-            SortRepositoriesRecursively(root);
-            return root;
-        }
-
-        private void SortRepositoriesRecursively(List<Repository> repositories)
-        {
-            // Sort the current level using IComparable implementation
-            repositories.Sort();
-
-            // Recursively sort all children
-            foreach (var repo in repositories)
-            {
-                if (repo.Children.Count > 0)
-                {
-                    SortRepositoriesRecursively(repo.Children);
-                }
-            }
-        }
-
-        private void RepositoriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        {
-            this.RaisePropertyChanged(nameof(HasRepositories));
-        }
-
-        private void ApplyRepositoryFilter()
-        {
-            var filter = RepositoryFilterText;
-            FilteredRepositories.Clear();
-
-            // No filter -> shallow copy of original top-level collection
-            if (string.IsNullOrWhiteSpace(filter))
-            {
-                foreach (var r in Repositories)
-                    FilteredRepositories.Add(r);
-                return;
-            }
-
-            var trimmed = filter.Trim();
-            foreach (var root in Repositories)
-            {
-                var pruned = PruneRepository(root, trimmed);
-                if (pruned != null)
-                    FilteredRepositories.Add(pruned);
-            }
-        }
-
-        private void ApplyTagFilter(string? preferredSelection = null)
-        {
-            var selectionName = preferredSelection ?? SelectedTag?.Name;
-
-            IEnumerable<Tag> source = _allTags;
-            if (!string.IsNullOrWhiteSpace(TagFilterText))
-            {
-                var trimmed = TagFilterText.Trim();
-                source = source.Where(t => WildcardFilter.Matches(t.Name, trimmed));
-            }
-
-            var filtered = source.ToList();
-
-            Tags.Clear();
-            foreach (var tag in filtered)
-            {
-                Tags.Add(tag);
-            }
-
-            if (!string.IsNullOrEmpty(selectionName))
-            {
-                var tagToSelect = Tags.FirstOrDefault(t => string.Equals(t.Name, selectionName, StringComparison.Ordinal));
-                if (tagToSelect != null)
-                {
-                    if (!EqualityComparer<Tag?>.Default.Equals(SelectedTag, tagToSelect))
+                    
+                    // Use the RepositorySelector's navigation method to handle filter clearing,
+                    // repository finding, ancestor expansion, and selection
+                    bool repositoryFound = await RepositorySelector.NavigateToRepositoryAsync(repository);
+                    
+                    if (repositoryFound)
                     {
-                        SelectedTag = tagToSelect;
+                        if (_logger.IsEnabled(LogLevel.Information))
+                        {
+                            _logger.LogInformation("Successfully navigated to repository {Repository}.", repository);
+                        }
+                        
+                        // Wait for tags to load after repository selection
+                        await Task.Delay(100);
+                        
+                        // Try to select the matching tag (only if selectTag is true and not a digest)
+                        if (selectTag && !isDigest)
+                        {
+                            var matchingTag = TagSelector.Tags.FirstOrDefault(t => 
+                                string.Equals(t.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase));
+                            
+                            if (matchingTag != null)
+                            {
+                                if (_logger.IsEnabled(LogLevel.Information))
+                                {
+                                    _logger.LogInformation("Navigating to tag {Tag} in repository {Repository}.", matchingTag.Name, repository);
+                                }
+                                
+                                // Sync with TagSelector (silently - no load trigger)
+                                // ArtifactService subscribes to TagSelector.SelectedTag changes
+                                TagSelector.UpdateSelectedTagSilently(matchingTag);
+                            }
+                            else if (_logger.IsEnabled(LogLevel.Information))
+                            {
+                                _logger.LogInformation("Tag {Tag} was not found in repository {Repository}.", tagOrDigest, repository);
+                            }
+                        }
+                        else if (_logger.IsEnabled(LogLevel.Information))
+                        {
+                            _logger.LogInformation("Skipping tag selection as requested (selectTag={SelectTag}, isDigest={IsDigest}).", selectTag, isDigest);
+                        }
                     }
-                }
-                else if (SelectedTag != null)
-                {
-                    SelectedTag = null;
-                    ManifestContent = string.Empty;
-                    ManifestViewer = null;
-                    Referrers.Clear();
-                }
-            }
-            else if (SelectedTag != null && !Tags.Contains(SelectedTag))
-            {
-                SelectedTag = null;
-                ManifestContent = string.Empty;
-                ManifestViewer = null;
-                Referrers.Clear();
-            }
-        }
-
-        private Repository? PruneRepository(Repository source, string filter)
-        {
-            // Check both the name (for simple matches like "ai") and the full path relative to registry
-            // (for hierarchical matches like "bicep/ai")
-            string relativePath = source.FullPath.Replace($"{source.Registry?.Url ?? ""}/", "");
-            bool selfMatch = WildcardFilter.Matches(source.Name, filter) || 
-                            WildcardFilter.Matches(relativePath, filter);
-            
-            var prunedChildren = new List<Repository>();
-            foreach (var child in source.Children)
-            {
-                var prunedChild = PruneRepository(child, filter);
-                if (prunedChild != null)
-                {
-                    prunedChild.Parent = null; // will set below after attaching
-                    prunedChildren.Add(prunedChild);
-                }
-            }
-
-            if (!selfMatch && prunedChildren.Count == 0)
-                return null; // neither this node nor descendants match
-
-            // create clone (prunedChildren already filtered)
-            var clone = new Repository
-            {
-                Name = source.Name,
-                FullPath = source.FullPath,
-                Registry = source.Registry,
-                IsLeaf = source.IsLeaf,
-                IsExpanded = source.IsExpanded,
-            };
-            foreach (var c in prunedChildren)
-            {
-                c.Parent = clone;
-                clone.Children.Add(c);
-            }
-            return clone;
-        }
-
-        private void FindAndSelectRepository(string repositoryPath)
-        {
-            // Split the repository path by slashes
-            var segments = repositoryPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length == 0)
-                return;
-
-            // Try to find the repository in the tree
-            Repository? found = null;
-
-            // First try to find an exact match by checking full paths
-            foreach (var repo in Repositories)
-            {
-                string repoFullPath = repo.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
-                if (string.Equals(repoFullPath, repositoryPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    found = repo;
-                    break;
-                }
-
-                // Recursively search in children
-                found = FindRepositoryByPath(repo, repositoryPath);
-                if (found != null)
-                    break;
-            }
-
-            // If not found, try to find a match by name segments
-            if (found == null)
-            {
-                // Try to find the repository by looking for the last segment
-                string lastSegment = segments[segments.Length - 1];
-
-                // Look in all repositories for a match on the last segment
-                foreach (var repo in Repositories)
-                {
-                    if (string.Equals(repo.Name, lastSegment, StringComparison.OrdinalIgnoreCase))
+                    else if (_logger.IsEnabled(LogLevel.Information))
                     {
-                        found = repo;
-                        break;
+                        _logger.LogInformation("Repository {Repository} was not found in the current registry tree.", repository);
                     }
-
-                    // Recursively search in children
-                    found = FindRepositoryByName(repo, lastSegment);
-                    if (found != null)
-                        break;
+                });
+            }
+            catch (Exception ex)
+            {
+                if (_logger.IsEnabled(LogLevel.Warning))
+                {
+                    _logger.LogWarning(ex, "Failed to navigate to reference {Reference}.", reference);
                 }
+                // Ignore navigation errors - user can still manually load
             }
-
-            // If found, select it
-            if (found != null)
-            {
-                SelectedRepository = found;
-            }
-        }
-
-        private void ExpandRepositoryAncestors(Repository repository)
-        {
-            var current = repository;
-            while (current != null)
-            {
-                current.IsExpanded = true;
-                current = current.Parent;
-            }
-        }
-
-        private Repository? FindRepositoryByPath(Repository parent, string path)
-        {
-            // Check if this repository matches
-            string repoFullPath = parent.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
-            if (string.Equals(repoFullPath, path, StringComparison.OrdinalIgnoreCase))
-                return parent;
-
-            // Check children
-            foreach (var child in parent.Children)
-            {
-                var found = FindRepositoryByPath(child, path);
-                if (found != null)
-                    return found;
-            }
-
-            return null;
         }
 
         /// <summary>
-        /// Tries to find and select a matching tag in the tag list after loading a manifest by reference.
-        /// This ensures the UI stays in sync when a fully qualified reference is pasted.
+        /// Finds a repository by its path (e.g., "library/nginx" or "dotnet/runtime")
         /// </summary>
-        private async Task TrySelectMatchingTag(string repository, string tagOrDigest, bool isDigestReference)
-        {
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                // If we have tags loaded and they match this repository
-                if (_allTags.Count > 0 && SelectedRepository != null)
-                {
-                    string currentRepoPath = SelectedRepository.FullPath.Replace($"{_currentRegistry.Url}/", string.Empty);
-                    
-                    if (string.Equals(currentRepoPath, repository, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Try to find the matching tag
-                        Tag? matchingTag = null;
-
-                        if (isDigestReference)
-                        {
-                            // For digest references, we can't easily match to a tag name
-                            // But we can check if any tag has the same digest (if we have that info)
-                            // For now, just keep the current selection or clear it
-                            if (SelectedTag != null && !string.Equals(SelectedTag.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase))
-                            {
-                                // Don't clear selection, just let it stay as-is since digest might match
-                            }
-                        }
-                        else
-                        {
-                            // For tag references, find exact match
-                            matchingTag = _allTags.FirstOrDefault(t => 
-                                string.Equals(t.Name, tagOrDigest, StringComparison.OrdinalIgnoreCase));
-
-                            if (matchingTag != null && SelectedTag != matchingTag)
-                            {
-                                // Select the matching tag without triggering a reload
-                                _selectedTag = matchingTag;
-                                this.RaisePropertyChanged(nameof(SelectedTag));
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        private Repository? FindRepositoryByName(Repository parent, string name)
-        {
-            // Check if this repository matches
-            if (string.Equals(parent.Name, name, StringComparison.OrdinalIgnoreCase))
-                return parent;
-
-            // Check children
-            foreach (var child in parent.Children)
-            {
-                var found = FindRepositoryByName(child, name);
-                if (found != null)
-                    return found;
-            }
-
-            return null;
-        }
-
         private void UpdateReferrerNodeContextMenu()
         {
             if (SelectedReferrerNode != null)
             {
                 // Set RegistryUrl and Repository FIRST, before Node
                 // because setting Node triggers UpdateContextMenus which creates the DigestContextMenu
-                ReferrerNodeContextMenu.RegistryUrl = RegistryUrl;
+                ReferrerNodeContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
                 ReferrerNodeContextMenu.Repository = _currentRepositoryPath;
                 ReferrerNodeContextMenu.Node = SelectedReferrerNode;
             }
         }
+
+        /// <summary>
+        /// Handles manifest load requests from manifestService
+        /// </summary>
+        private void OnManifestLoadRequested(object? sender, Services.ManifestLoadRequestedEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] OnManifestLoadRequested received for reference: {e.Reference}, source: {e.Source}");
+            
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Manifest load requested from {Source} for {Reference}.", e.Source, e.Reference);
+            }
+            
+            // Close the history dropdown whenever a load kicks off so the popup collapses reliably
+            if (ReferenceHistory.IsDropDownOpen)
+            {
+                ReferenceHistory.IsDropDownOpen = false;
+            }
+
+            // Note: History is updated automatically by ReferenceHistoryViewModel subscribing to manifestService.LoadCompleted
+
+            // Update the reference box to show what we're loading
+            if (SelectedTagReference != e.Reference)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainViewModel] Setting SelectedTagReference to: {e.Reference}");
+                SelectedTagReference = e.Reference;
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("SelectedTagReference set to {Reference} during request handling.", e.Reference);
+                }
+            }
+            
+            // Actually perform the manifest load
+            _ = LoadManifestByReferenceAsync();
+        }
+
+        /// <summary>
+        /// Handles manifest load completion events from manifestService
+        /// </summary>
+        private void OnManifestLoadCompleted(object? sender, Services.ManifestLoadedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Manifest load completed from {Source} for {Reference}.", e.Source, e.Reference);
+            }
+            
+            // Check if this is a digest reference
+            bool isDigest = e.Reference.Contains("@sha256:") || e.Reference.Contains("@sha512:");
+            
+            // Note: History is automatically updated by ReferenceHistoryViewModel subscribing to this LoadCompleted event
+            
+            // Update UI state based on which component requested the load
+            switch (e.Source)
+            {
+                case Services.LoadSource.History:
+                    // When history loads, update the reference box and navigate to the repository
+                    // but don't auto-select the tag to avoid jumping back to previously selected tag
+                    SelectedTagReference = e.Reference;
+                    
+                    // Navigate to repository only (selectTag=false)
+                    if (!isDigest)
+                    {
+                        _ = TryNavigateToReferenceAsync(e.Reference, selectTag: false);
+                    }
+                    
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("History load applied reference {Reference} without auto-selecting tag (current tag: {Tag}).", e.Reference, _artifactService.CurrentTag?.Name ?? "<none>");
+                    }
+                    break;
+                    
+                case Services.LoadSource.ReferenceBox:
+                    // When reference box loads, update reference box
+                    SelectedTagReference = e.Reference;
+                    
+                    // Only try to navigate for non-digest references
+                    if (!isDigest)
+                    {
+                        _ = TryNavigateToReferenceAsync(e.Reference);
+                    }
+                    else if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("ReferenceBox load with digest reference {Reference} - skipping navigation.", e.Reference);
+                    }
+                    break;
+                    
+                case Services.LoadSource.TagSelection:
+                    // When tag loads, update reference box
+                    SelectedTagReference = e.Reference;
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("Tag selection load finalized reference {Reference} (current tag: {Tag}).", e.Reference, _artifactService.CurrentTag?.Name ?? "<none>");
+                    }
+                    break;
+            }
+        }
+
+        private void OnReferenceHistoryLoadRequested(object? sender, EventArgs e)
+        {
+            var reference = ReferenceHistory.CurrentReference?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(reference))
+            {
+                _statusService.SetStatus("Reference is empty", isError: true);
+                return;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("History dropdown requested manifest load for {Reference}.", reference);
+            }
+
+            _manifestService.RequestLoad(reference, Services.LoadSource.History, forceReload: true);
+        }
+        
+        private void OnDigestManifestRequested(object? sender, string reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference))
+            {
+                _statusService.SetStatus("Invalid reference", isError: true);
+                return;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Digest context menu requested manifest load for {Reference}.", reference);
+            }
+
+            // Update the reference box to show the digest reference
+            ReferenceHistory.CurrentReference = reference;
+            
+            // Request the load
+            _manifestService.RequestLoad(reference, Services.LoadSource.ReferenceBox, forceReload: true);
+        }
+        
+        private void OnRepositoryLoadRequested(object? sender, Repository repository)
+        {
+            if (repository == null)
+                return;
+
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] OnRepositoryLoadRequested received for repository: {repository.Name}");
+            
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Repository selector requested load for repository {Repository}.", repository.Name);
+            }
+
+            // Tag loading is now handled by tagService subscribing to RepositorySelector.RepositorySelected
+            // This event can be used for other repository-specific actions if needed
+        }
+
+        // Note: OnRepositorySelectedForTagLoading removed - now handled by ArtifactService.OnRepositorySelected
+        
+        private async void OnRepositoryRefreshRequested(object? sender, EventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Repository selector requested refresh.");
+            }
+
+            // Delegate to repositoryService which handles status, error handling, and triggers events
+            await _repositoryService.RefreshRepositoriesAsync(default);
+        }
+        
+        private void OnTagLoadRequested(object? sender, Tag tag)
+        {
+            if (tag == null)
+                return;
+
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] OnTagLoadRequested received for tag: {tag.Name}, FullReference: {tag.FullReference}");
+            
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Tag selector requested load for tag {Tag}.", tag.Name);
+            }
+
+            // Request load via manifestService (this is a user-initiated action)
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Calling manifestService.RequestLoad with reference: {tag.FullReference}, source: TagSelection");
+            _manifestService.RequestLoad(tag.FullReference, Services.LoadSource.TagSelection);
+        }
+        
+        private void OnTagRefreshRequested(object? sender, EventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Tag selector requested refresh.");
+            }
+
+            // Refresh tags using TagService's refresh method (which manages busy state)
+            _ = _tagService.RefreshTagsAsync();
+        }
+        
+        /// <summary>
+        /// Handles repository selection request from ManifestLoadCoordinator
+        /// </summary>
+        private async void OnCoordinatorRepositorySelectionRequested(object? sender, RepositorySelectionRequestedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("ManifestLoadCoordinator requested repository selection: {Repository}", e.Repository.Name);
+            }
+
+            // Navigate to and select the repository in the RepositorySelector
+            var repositoryPath = e.Repository.FullPath.Replace($"{_artifactService.CurrentRegistry?.Url}/", string.Empty);
+            await RepositorySelector.NavigateToRepositoryAsync(repositoryPath);
+        }
+        
+        /// <summary>
+        /// Handles tag selection request from ManifestLoadCoordinator
+        /// </summary>
+        private void OnCoordinatorTagSelectionRequested(object? sender, TagSelectionRequestedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("ManifestLoadCoordinator requested tag selection: {Tag}", e.TagName);
+            }
+
+            // Find and select the tag in the TagSelector
+            var tag = TagSelector.Tags.FirstOrDefault(t => string.Equals(t.Name, e.TagName, StringComparison.OrdinalIgnoreCase));
+            if (tag != null)
+            {
+                // Suppress auto-selection during coordinator navigation
+                var suppressFlag = _manifestService.ShouldSuppressTagAutoSelection;
+                
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Found matching tag, selecting: {Tag} (suppress={Suppress})", tag.Name, suppressFlag);
+                }
+                
+                TagSelector.SelectedTag = tag;
+            }
+            else if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning("Tag {Tag} not found in loaded tags", e.TagName);
+            }
+        }
     }
 }
+
+
+
+
+
+

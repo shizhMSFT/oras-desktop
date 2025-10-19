@@ -23,13 +23,17 @@ public class DigestContextMenuViewModel : ViewModelBase
     {
         CopyDigestCommand = ReactiveCommand.CreateFromTask(CopyDigest);
         CopyFullyQualifiedReferenceCommand = ReactiveCommand.CreateFromTask(CopyFullyQualifiedReference);
+        GetManifestCommand = ReactiveCommand.Create(GetManifest, this.WhenAnyValue(
+            x => x.RegistryUrl,
+            x => x.Repository,
+            (url, repo) => !string.IsNullOrEmpty(url) && !string.IsNullOrEmpty(repo)));
     }
 
     public DigestContextMenuViewModel(string digest, string? registryUrl = null, string? repository = null) : this()
     {
-        _digest = digest;
-        _registryUrl = registryUrl;
-        _repository = repository;
+        Digest = digest;
+        RegistryUrl = registryUrl;
+        Repository = repository;
     }
 
     public string Digest
@@ -52,6 +56,12 @@ public class DigestContextMenuViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> CopyDigestCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyFullyQualifiedReferenceCommand { get; }
+    public ReactiveCommand<Unit, Unit> GetManifestCommand { get; }
+    
+    /// <summary>
+    /// Event raised when the user requests to load the manifest for this digest
+    /// </summary>
+    public event EventHandler<string>? ManifestRequested;
 
     private async Task CopyDigest()
     {
@@ -68,6 +78,18 @@ public class DigestContextMenuViewModel : ViewModelBase
         var fullyQualifiedRef = $"{registryPrefix}{Repository}@{Digest}";
 
         await CopyToClipboardAsync(fullyQualifiedRef);
+    }
+    
+    private void GetManifest()
+    {
+        if (string.IsNullOrEmpty(RegistryUrl) || string.IsNullOrEmpty(Repository))
+            return;
+
+        // Format: registry.example.com/repository@digest
+        var fullyQualifiedRef = $"{RegistryUrl}/{Repository}@{Digest}";
+        
+        // Raise event for MainViewModel to handle via ManifestLoader
+        ManifestRequested?.Invoke(this, fullyQualifiedRef);
     }
 
     private static async Task CopyToClipboardAsync(string text)

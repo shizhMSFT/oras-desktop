@@ -25,6 +25,11 @@ public class ReferrerNodeContextMenuViewModel : ViewModelBase
     }
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> CopyCommand { get; }
+    
+    /// <summary>
+    /// Event raised when a manifest is requested from a referrer node's context menu
+    /// </summary>
+    public event EventHandler<string>? ManifestRequested;
 
     public ReferrerNode? Node
     {
@@ -91,11 +96,19 @@ public class ReferrerNodeContextMenuViewModel : ViewModelBase
         // Check if this is a digest node (referrer with Info)
         if (!Node.IsGroup && Node.Info != null && !string.IsNullOrEmpty(Node.Info.Digest))
         {
-            DigestContextMenu = new DigestContextMenuViewModel(
+            var digestContextMenu = new DigestContextMenuViewModel(
                 Node.Info.Digest,
                 RegistryUrl,
                 Repository
             );
+            
+            // Subscribe to ManifestRequested event and bubble it up
+            digestContextMenu.ManifestRequested += (sender, reference) =>
+            {
+                ManifestRequested?.Invoke(this, reference);
+            };
+            
+            DigestContextMenu = digestContextMenu;
             AnnotationContextMenu = null;
             ArtifactTypeContextMenu = null;
             this.RaisePropertyChanged(nameof(IsDigestNode));

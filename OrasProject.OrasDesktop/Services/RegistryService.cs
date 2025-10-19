@@ -160,6 +160,23 @@ public sealed class RegistryService : IRegistryService
         }
     }
 
+    public async Task<bool> CanResolveTagAsync(string repository, string tag, CancellationToken ct)
+    {
+        try
+        {
+            EnsureInitialized();
+            var repo = await _registry!.GetRepositoryAsync(repository, ct);
+            // Try to resolve the tag to a descriptor (cheaper than fetching the full manifest)
+            var descriptor = await repo.ResolveAsync(tag, ct);
+            return descriptor != null;
+        }
+        catch
+        {
+            // Any exception means we can't resolve the tag
+            return false;
+        }
+    }
+
     public async Task<ManifestResult> GetManifestByTagAsync(
         string repository,
         string tag,

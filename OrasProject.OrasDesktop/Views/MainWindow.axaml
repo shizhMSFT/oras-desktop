@@ -10,5 +10,10 @@
         Title="ORAS Desktop Client"
         WindowStartupLocation="CenterScreen"
         MinWidth="800" MinHeight="500">
-        <views:MainView />
+        
+        <Window.KeyBindings>
+                <KeyBinding Gesture="F4" />
+        </Window.KeyBindings>
+        
+        <views:MainView x:Name="MainViewControl" />
 </Window>

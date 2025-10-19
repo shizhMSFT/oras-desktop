@@ -13,6 +13,13 @@ public interface IRegistryService
     Task InitializeAsync(RegistryConnection connection, CancellationToken ct);
     Task<IReadOnlyList<string>> ListRepositoriesAsync(CancellationToken ct);
     Task<IReadOnlyList<string>> ListTagsAsync(string repository, CancellationToken ct);
+    
+    /// <summary>
+    /// Tests if a specific tag can be resolved (cheaper than listing all tags).
+    /// Returns true if the tag exists and is accessible, false otherwise.
+    /// </summary>
+    Task<bool> CanResolveTagAsync(string repository, string tag, CancellationToken ct);
+    
     Task<ManifestResult> GetManifestByTagAsync(string repository, string tag, CancellationToken ct);
     Task<ManifestResult> GetManifestByDigestAsync(
         string repository,

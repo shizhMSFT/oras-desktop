@@ -6,6 +6,7 @@
   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
   xmlns:vm="clr-namespace:OrasProject.OrasDesktop.ViewModels"
   xmlns:svc="clr-namespace:OrasProject.OrasDesktop.Services"
+  xmlns:views="clr-namespace:OrasProject.OrasDesktop.Views"
   d:DesignHeight="600"
   d:DesignWidth="1000"
   x:DataType="vm:MainViewModel"
@@ -20,7 +21,7 @@
       
       <!-- Left side: Connection + Repositories/Tags (stacked vertically) -->
       <Grid Grid.Column="0" RowDefinitions="Auto,*">
-        <!-- Connection controls at top -->
+        <!-- Connection control at top -->
         <StackPanel
           Grid.Row="0"
           Margin="10,10,5,10"
@@ -30,197 +31,27 @@
             Classes="section-header"
             VerticalAlignment="Center"
             Text="Registry:" />
-          <TextBox
-            Name="RegistryTextBox"
-            Width="250"
-            Text="{Binding RegistryUrl}"
-            Watermark="Enter registry (e.g., mcr.microsoft.com)"
-            ToolTip.Tip="Press Enter to connect, or Shift+Enter to force login">
-            <TextBox.KeyBindings>
-              <KeyBinding Command="{Binding ConnectCommand}" Gesture="Enter" />
-              <KeyBinding Command="{Binding ForceLoginCommand}" Gesture="Shift+Enter" CommandParameter="True" />
-            </TextBox.KeyBindings>
-          </TextBox>
-          <Button
-            Name="ConnectButton"
-            Command="{Binding ConnectCommand}"
-            ToolTip.Tip="Click to connect anonymously, or hold Shift to force login">
-            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Path
-                Width="16"
-                Height="16"
-                Data="M10,17V14H3V10H10V7L15,12L10,17M19,3H12V5H19V19H12V21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3Z"
-                Fill="{DynamicResource ButtonForeground}"
-                Stretch="Uniform"
-                VerticalAlignment="Center" />
-              <TextBlock Text="Connect" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
+          <views:ConnectionControl
+            x:Name="ConnectionControl"
+            Width="350"
+            DataContext="{Binding Connection}" />
         </StackPanel>
         
         <!-- Repositories and Tags side by side -->
         <Grid Grid.Row="1" ColumnDefinitions="250,250">
           <!--  Repositories  -->
-          <Grid
+          <views:RepositorySelectorControl
+            x:Name="RepositorySelectorControl"
             Grid.Column="0"
             Margin="10,0,5,0"
-            RowDefinitions="Auto,Auto,*">
-            <StackPanel
-              Grid.Row="0"
-              Margin="0,0,0,2"
-              Orientation="Horizontal"
-              Spacing="4"
-              VerticalAlignment="Center">
-              <TextBlock
-                Classes="section-header"
-                VerticalAlignment="Center"
-                Text="Repositories" />
-              <Button
-                Width="24"
-                Height="24"
-                Padding="0"
-                Background="Transparent"
-                BorderThickness="0"
-                Command="{Binding RefreshRepositoriesCommand}"
-                IsEnabled="{Binding HasRepositories}"
-                ToolTip.Tip="Refresh repository list">
-                <Button.Styles>
-                  <Style Selector="Button:disabled">
-                    <Setter Property="Opacity" Value="0.35" />
-                    <Setter Property="Background" Value="Transparent" />
-                  </Style>
-                </Button.Styles>
-                <Path
-                  Width="16"
-                  Height="16"
-                  Data="M12,4A8,8 0 0,0 4,12H1L5,16L9,12H6A6,6 0 0,1 12,6C14.17,6 16.11,7.03 17.33,8.67L18.8,7.4C17.18,5.22 14.73,4 12,4M19,8L15,12L19,16V13A6,6 0 0,1 13,19C10.83,19 8.89,17.97 7.67,16.33L6.2,17.6C7.82,19.78 10.27,21 13,21A8,8 0 0,0 21,13H24L20,9Z"
-                  Fill="{DynamicResource ButtonForeground}"
-                  Stretch="Uniform" />
-              </Button>
-            </StackPanel>
-            <TextBox
-              Grid.Row="1"
-              Name="RepositoryFilterTextBox"
-              VerticalContentAlignment="Center"
-              Watermark="Filter repositories (use * for wildcards)..."
-              Text="{Binding RepositoryFilterText}"
-              ToolTip.Tip="Filter repositories by name or path. Examples: bicep* (starts with), *packages* (contains), bicep/ai* (path match)" />
-            <TreeView
-              Grid.Row="2"
-              Name="RepositoriesTreeView"
-              ItemsSource="{Binding FilteredRepositories}"
-              SelectedItem="{Binding SelectedRepository}">
-              <TreeView.KeyBindings>
-                <KeyBinding Command="{Binding RepositoryContextMenu.CopyRepositoryNameCommand}" Gesture="Ctrl+C" />
-              </TreeView.KeyBindings>
-              <TreeView.ContextMenu>
-                <ContextMenu>
-                  <MenuItem 
-                    Header="Copy Repository Path" 
-                    Command="{Binding RepositoryContextMenu.CopyRepositoryNameCommand}">
-                    <MenuItem.Icon>
-                      <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                  <MenuItem 
-                    Header="Copy Fully Qualified Name" 
-                    Command="{Binding RepositoryContextMenu.CopyFullyQualifiedNameCommand}">
-                    <MenuItem.Icon>
-                      <PathIcon Data="M16,1H4C2.9,1 2,1.9 2,3V17H4V3H16V1M19,5H8C6.9,5 6,5.9 6,7V21C6,22.1 6.9,23 8,23H19C20.1,23 21,22.1 21,21V7C21,5.9 20.1,5 19,5M19,21H8V7H19V21M13,9H11V13H7V15H11V19H13V15H17V13H13V9Z" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                </ContextMenu>
-              </TreeView.ContextMenu>
-              <TreeView.Styles>
-                <Style Selector="TreeViewItem">
-                  <Setter Property="IsExpanded">
-                    <Setter.Value>
-                      <Binding Path="IsExpanded" />
-                    </Setter.Value>
-                  </Setter>
-                </Style>
-              </TreeView.Styles>
-              <TreeView.ItemTemplate>
-                <TreeDataTemplate ItemsSource="{Binding Children}">
-                  <TextBlock Text="{Binding Name}" 
-                             Opacity="{Binding IsLeaf, Converter={StaticResource BoolToOpacityConverter}}" />
-                </TreeDataTemplate>
-              </TreeView.ItemTemplate>
-            </TreeView>
-          </Grid>
+            DataContext="{Binding RepositorySelector}" />
 
           <!--  Tags  -->
-          <Grid
+          <views:TagSelectorControl 
+            x:Name="TagSelectorControl"
             Grid.Column="1"
-            Margin="0,0,5,0"
-            RowDefinitions="Auto,Auto,*">
-            <StackPanel
-              Grid.Row="0"
-              Margin="0,0,0,2"
-              Orientation="Horizontal"
-              Spacing="4"
-              VerticalAlignment="Center">
-              <TextBlock
-                Classes="section-header"
-                VerticalAlignment="Center"
-                Text="Tags" />
-              <Button
-                Width="24"
-                Height="24"
-                Padding="0"
-                Background="Transparent"
-                BorderThickness="0"
-                Command="{Binding RefreshTagsCommand}"
-                ToolTip.Tip="Refresh tags for selected repository">
-                <Path
-                  Width="16"
-                  Height="16"
-                  Data="M12,4A8,8 0 0,0 4,12H1L5,16L9,12H6A6,6 0 0,1 12,6C14.17,6 16.11,7.03 17.33,8.67L18.8,7.4C17.18,5.22 14.73,4 12,4M19,8L15,12L19,16V13A6,6 0 0,1 13,19C10.83,19 8.89,17.97 7.67,16.33L6.2,17.6C7.82,19.78 10.27,21 13,21A8,8 0 0,0 21,13H24L20,9Z"
-                  Fill="{DynamicResource ButtonForeground}"
-                  Stretch="Uniform" />
-              </Button>
-            </StackPanel>
-            <TextBox
-              Grid.Row="1"
-              Name="TagFilterTextBox"
-              Margin="0,0,0,3"
-              VerticalContentAlignment="Center"
-              Watermark="Filter tags (use * for wildcards)..."
-              Text="{Binding TagFilterText}"
-              ToolTip.Tip="Filter tags by name. Examples: v1.* (version prefix), *-alpha (suffix match), *rc* (contains)" />
-            <ListBox
-              Grid.Row="2"
-              Name="TagsListBox"
-              ItemsSource="{Binding Tags}"
-              SelectedItem="{Binding SelectedTag}">
-              <ListBox.KeyBindings>
-                <KeyBinding Command="{Binding TagContextMenu.CopyTagCommand}" Gesture="Ctrl+C" />
-              </ListBox.KeyBindings>
-              <ListBox.ContextMenu>
-                <ContextMenu>
-                  <MenuItem 
-                    Header="Copy Tag" 
-                    Command="{Binding TagContextMenu.CopyTagCommand}">
-                    <MenuItem.Icon>
-                      <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                  <MenuItem 
-                    Header="Copy Fully Qualified Reference" 
-                    Command="{Binding TagContextMenu.CopyFullyQualifiedReferenceCommand}">
-                    <MenuItem.Icon>
-                      <PathIcon Data="M16,1H4C2.9,1 2,1.9 2,3V17H4V3H16V1M19,5H8C6.9,5 6,5.9 6,7V21C6,22.1 6.9,23 8,23H19C20.1,23 21,22.1 21,21V7C21,5.9 20.1,5 19,5M19,21H8V7H19V21M13,9H11V13H7V15H11V19H13V15H17V13H13V9Z" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                </ContextMenu>
-              </ListBox.ContextMenu>
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </Grid>
+            Margin="5,0,5,0"
+            DataContext="{Binding TagSelector}" />
         </Grid>
       </Grid>
 
@@ -534,6 +365,15 @@
                             </MenuItem>
                             <!-- Digest commands (visible when digest node is selected) -->
                             <MenuItem 
+                              Header="Get Manifest" 
+                              Command="{Binding ReferrerNodeContextMenu.DigestContextMenu.GetManifestCommand}"
+                              IsVisible="{Binding ReferrerNodeContextMenu.IsDigestNode}">
+                              <MenuItem.Icon>
+                                <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
+                              </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator IsVisible="{Binding ReferrerNodeContextMenu.IsDigestNode}" />
+                            <MenuItem 
                               Header="Copy Digest" 
                               Command="{Binding ReferrerNodeContextMenu.DigestContextMenu.CopyDigestCommand}"
                               IsVisible="{Binding ReferrerNodeContextMenu.IsDigestNode}"
@@ -626,26 +466,17 @@
             Text="Reference:" />
         </StackPanel>
         
-        <TextBox
+        <views:ReferenceHistoryControl
           Grid.Column="1"
           Margin="8,0,0,0"
-          Height="30"
-          Padding="12,0,12,0"
           VerticalAlignment="Center"
-          VerticalContentAlignment="Center"
-          Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
-          BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-          BorderThickness="1"
-          CornerRadius="3"
-          Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
-          Watermark="Enter registry/repository:tag or @digest..."
-          Text="{Binding SelectedTagReference}"
-          ToolTip.Tip="Press Enter to load manifest details"
-          Name="ReferenceTextBox">
-          <TextBox.KeyBindings>
-            <KeyBinding Command="{Binding LoadManifestByReferenceCommand}" Gesture="Enter" />
-          </TextBox.KeyBindings>
-        </TextBox>
+          DataContext="{Binding ReferenceHistory}"
+          ToolTip.Tip="Press Enter to load manifest details, F4 to focus"
+          Name="ReferenceHistoryControl">
+          <views:ReferenceHistoryControl.KeyBindings>
+            <KeyBinding Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).LoadManifestByReferenceCommand}" Gesture="Enter" />
+          </views:ReferenceHistoryControl.KeyBindings>
+        </views:ReferenceHistoryControl>
         
         <Button
           Grid.Column="2"
@@ -683,42 +514,8 @@
     </Border>
 
     <!--  Row 3: Status bar  -->
-    <Border
+    <views:StatusBar
       Grid.Row="3"
-      Classes="status-bar"
-      Height="30"
-      Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-      BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <!-- Error Icon -->
-        <TextBlock
-          Grid.Column="0"
-          Margin="10,0,5,0"
-          VerticalAlignment="Center"
-          Text="❌"
-          FontSize="14"
-          IsVisible="{Binding IsStatusError}" />
-        
-        <!-- Status Message -->
-        <TextBlock
-          Grid.Column="1"
-          VerticalAlignment="Center"
-          Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
-          Text="{Binding StatusMessage}"
-          Margin="{Binding IsStatusError, Converter={StaticResource StatusMessageMarginConverter}}" />
-        
-        <!-- Progress Bar -->
-        <ProgressBar
-          Grid.Column="2"
-          Width="100"
-          Height="15"
-          Margin="0,0,10,0"
-          Value="{Binding ProgressValue}"
-          Maximum="100"
-          IsIndeterminate="{Binding IsProgressIndeterminate}"
-          IsVisible="{Binding IsProgressVisible}" />
-      </Grid>
-    </Border>
+      DataContext="{Binding StatusBar}" />
   </Grid>
 </UserControl>

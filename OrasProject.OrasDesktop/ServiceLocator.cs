@@ -1,5 +1,7 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using OrasProject.OrasDesktop.Logging;
 using OrasProject.OrasDesktop.Services;
 using OrasProject.OrasDesktop.Themes;
 using OrasProject.OrasDesktop.ViewModels;
@@ -66,8 +68,43 @@ namespace OrasProject.OrasDesktop
             // Register JSON highlight service as singleton (depends on IThemeService)
             services.AddSingleton<JsonHighlightService>();
             
+            // Register manifest service as singleton (event coordinator)
+            services.AddSingleton<ManifestService>();
+            
             // Register registry service as singleton
             services.AddSingleton<IRegistryService, RegistryService>();
+            
+            // Register artifact service as singleton (central state coordinator)
+            services.AddSingleton<ArtifactService>();
+            
+            // Register status service as singleton (central status messaging)
+            services.AddSingleton<StatusService>();
+            
+            // Register connection service as singleton (event coordinator)
+            services.AddSingleton<ConnectionService>();
+            
+            // Register repository service as singleton (event coordinator, depends on ConnectionService)
+            services.AddSingleton<RepositoryService>();
+            
+            // Register tag service as singleton (event coordinator)
+            services.AddSingleton<TagService>();
+            
+            // Register manifest load coordinator as singleton (orchestrates repo/tag loading after manifest load)
+            services.AddSingleton<ManifestLoadCoordinator>();
+
+            services.AddLogging(builder =>
+            {
+                // Set log level based on whether debug logging is enabled
+                // Information level for normal use, Debug level when explicitly enabled
+                var minLevel = DesktopLoggingOptions.DebugLoggingEnabled ? LogLevel.Debug : LogLevel.Information;
+                builder.SetMinimumLevel(minLevel);
+                
+                // File logging (controlled by DesktopLoggingOptions.IsEnabled)
+                builder.AddProvider(new TempFileLoggerProvider(DesktopLoggingOptions.LogFilePath, () => DesktopLoggingOptions.IsEnabled));
+                
+                // Debug window logging (outputs to IDE debug window)
+                builder.AddDebug();
+            });
 
             // Register ViewModels
             services.AddTransient<MainViewModel>();
