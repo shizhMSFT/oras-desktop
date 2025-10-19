@@ -30,6 +30,7 @@ namespace OrasProject.OrasDesktop.ViewModels
     private readonly Services.TagService _tagService;
     private readonly Services.ArtifactService _artifactService;
     private readonly Services.StatusService _statusService;
+    private readonly Services.ManifestLoadCoordinator _manifestLoadCoordinator;
     private readonly ILogger<MainViewModel> _logger;
 
         // Events
@@ -71,9 +72,9 @@ namespace OrasProject.OrasDesktop.ViewModels
             ManifestService manifestService,
             RepositoryService repositoryService,
             TagService tagService,
-            ManifestNavigator manifestNavigator,
             ArtifactService artifactService,
             StatusService statusService,
+            ManifestLoadCoordinator manifestLoadCoordinator,
             ILogger<MainViewModel> logger,
             ILoggerFactory loggerFactory)
         {
@@ -87,6 +88,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             _tagService = tagService;
             _artifactService = artifactService;
             _statusService = statusService;
+            _manifestLoadCoordinator = manifestLoadCoordinator;
             _logger = logger;
 
             // Initialize component ViewModels
@@ -116,10 +118,10 @@ namespace OrasProject.OrasDesktop.ViewModels
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
             LoadManifestByReferenceCommand = ReactiveCommand.Create(() =>
             {
-                var reference = ReferenceHistory.CurrentReference?.Trim() ?? string.Empty;
+                var reference = ReferenceHistory.CurrentReference?.Trim();
                 if (!string.IsNullOrWhiteSpace(reference))
                 {
-                    _manifestService.RequestLoad(reference, Services.LoadSource.ReferenceBox, forceReload: true);
+                    _manifestService!.RequestLoad(reference!, Services.LoadSource.ReferenceBox, forceReload: true);
                 }
             });
             ViewPlatformManifestCommand = ReactiveCommand.CreateFromTask<PlatformImageSize>(ViewPlatformManifestAsync);
@@ -178,6 +180,10 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Wire up TagSelector events
             TagSelector.TagLoadRequested += OnTagLoadRequested;
             TagSelector.RefreshRequested += OnTagRefreshRequested;
+            
+            // Wire up ManifestLoadCoordinator events
+            _manifestLoadCoordinator.RepositorySelectionRequested += OnCoordinatorRepositorySelectionRequested;
+            _manifestLoadCoordinator.TagSelectionRequested += OnCoordinatorTagSelectionRequested;
         }
        public TextBlock? ManifestViewer
         {
@@ -526,7 +532,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
-        private async Task LoadReferrersAsync(string repositoryPath, string digest)
+        private async Task LoadReferrersAsync(string repositoryPath, string digest, string reference)
         {
             ReferrersLoading = true;
             _statusService.SetProgress(0, isIndeterminate: false);
@@ -535,7 +541,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Use a progress handler to update both the status message and progress bar
                 var progress = new Progress<int>(count =>
                 {
-                    _statusService.SetStatus($"Loading referrers ({count})...");
+                    _statusService.SetStatus($"Loading referrers ({count}) for {reference}...");
                     // Set an indeterminate progress at first to show activity
                     if (count == 1)
                     {
@@ -564,7 +570,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                     foreach (var c in n.Children) CountNode(c);
                 }
                 foreach (var root in nodes) CountNode(root);
-                _statusService.SetStatus($"Loaded referrers ({total})");
+                string referrerWord = total == 1 ? "referrer" : "referrers";
+                _statusService.SetStatus($"Loaded {total} {referrerWord} for {reference}");
                 // Set progress to 100% when complete
                 _statusService.SetProgress(100);
             }
@@ -605,6 +612,12 @@ namespace OrasProject.OrasDesktop.ViewModels
             if (mainWindow == null)
             {
                 _statusService.SetStatus("Failed to get main window", isError: true);
+                return;
+            }
+
+            if (_artifactService.CurrentRegistry == null)
+            {
+                _statusService.SetStatus("No registry connected", isError: true);
                 return;
             }
 
@@ -796,6 +809,34 @@ namespace OrasProject.OrasDesktop.ViewModels
                     // ConnectionEstablished event will update ArtifactService and load repositories
                 }
 
+                // Ensure repositories are loaded before trying to navigate
+                // If no repositories are loaded yet, load them first
+                if (RepositorySelector.Repositories.Count == 0 && _artifactService.CurrentRegistry != null)
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("No repositories loaded yet, loading repositories for {Registry}...", _artifactService.CurrentRegistry.Url);
+                    }
+                    
+                    _statusService.SetStatus($"Loading repositories...");
+                    
+                    try
+                    {
+                        await _repositoryService.RefreshRepositoriesAsync(default);
+                        
+                        // Wait a bit for the UI to update
+                        await Task.Delay(100);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_logger.IsEnabled(LogLevel.Warning))
+                        {
+                            _logger.LogWarning(ex, "Failed to load repositories while processing reference {Reference}.", originalReference);
+                        }
+                        // Continue anyway - user might still be able to load the manifest
+                    }
+                }
+
                 // Now fetch tags for the repository if possible (TagService will handle actual loading)
                 try
                 {
@@ -847,7 +888,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
                 DigestContextMenu.Repository = repository;
-                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry.Url;
+                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
@@ -858,7 +899,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Load referrers
                 _statusService.SetProgress(0);
                 // Progress indeterminate handled by SetProgress
-                _ = LoadReferrersAsync(repository, CurrentManifest.Digest);
+                _ = LoadReferrersAsync(repository, CurrentManifest.Digest, originalReference);
 
                 // IMPORTANT: Preserve the original pasted reference instead of resetting it
                 SelectedTagReference = originalReference;
@@ -942,22 +983,24 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Update digest context menu
                 DigestContextMenu.Digest = CurrentManifest.Digest;
                 DigestContextMenu.Repository = repoPath;
-                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry.Url;
+                DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
                 ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
 
                 // Update the selected tag reference to use the digest of the platform-specific manifest
-                if (_artifactService.CurrentTag != null)
+                string platformReference = SelectedTagReference;
+                if (_artifactService.CurrentTag != null && _artifactService.CurrentRegistry != null)
                 {
                     string repository = _artifactService.CurrentTag.Repository!.FullPath.Replace($"{_artifactService.CurrentRegistry.Url}/", string.Empty);
-                    SelectedTagReference = $"{_artifactService.CurrentRegistry.Url}/{repository}@{platformSize.Digest}";
+                    platformReference = $"{_artifactService.CurrentRegistry.Url}/{repository}@{platformSize.Digest}";
+                    SelectedTagReference = platformReference;
                 }
 
                 // Kick off referrers load (fire and forget, separate status message)
                 _statusService.SetProgress(0);
                 // Progress indeterminate handled by SetProgress
-                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest);
+                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest, platformReference);
 
                 _statusService.SetStatus($"Loaded manifest for platform {platformSize.Platform}");
             }
@@ -1308,8 +1351,54 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Refresh tags using TagService's refresh method (which manages busy state)
             _ = _tagService.RefreshTagsAsync();
         }
+        
+        /// <summary>
+        /// Handles repository selection request from ManifestLoadCoordinator
+        /// </summary>
+        private async void OnCoordinatorRepositorySelectionRequested(object? sender, RepositorySelectionRequestedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("ManifestLoadCoordinator requested repository selection: {Repository}", e.Repository.Name);
+            }
+
+            // Navigate to and select the repository in the RepositorySelector
+            var repositoryPath = e.Repository.FullPath.Replace($"{_artifactService.CurrentRegistry?.Url}/", string.Empty);
+            await RepositorySelector.NavigateToRepositoryAsync(repositoryPath);
+        }
+        
+        /// <summary>
+        /// Handles tag selection request from ManifestLoadCoordinator
+        /// </summary>
+        private void OnCoordinatorTagSelectionRequested(object? sender, TagSelectionRequestedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("ManifestLoadCoordinator requested tag selection: {Tag}", e.TagName);
+            }
+
+            // Find and select the tag in the TagSelector
+            var tag = TagSelector.Tags.FirstOrDefault(t => string.Equals(t.Name, e.TagName, StringComparison.OrdinalIgnoreCase));
+            if (tag != null)
+            {
+                // Suppress auto-selection during coordinator navigation
+                var suppressFlag = _manifestService.ShouldSuppressTagAutoSelection;
+                
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Found matching tag, selecting: {Tag} (suppress={Suppress})", tag.Name, suppressFlag);
+                }
+                
+                TagSelector.SelectedTag = tag;
+            }
+            else if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning("Tag {Tag} not found in loaded tags", e.TagName);
+            }
+        }
     }
 }
+
 
 
 

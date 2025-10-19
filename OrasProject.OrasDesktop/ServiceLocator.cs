@@ -89,8 +89,8 @@ namespace OrasProject.OrasDesktop
             // Register tag service as singleton (event coordinator)
             services.AddSingleton<TagService>();
             
-            // Register manifest navigator as singleton (orchestrates navigation across services)
-            services.AddSingleton<ManifestNavigator>();
+            // Register manifest load coordinator as singleton (orchestrates repo/tag loading after manifest load)
+            services.AddSingleton<ManifestLoadCoordinator>();
 
             services.AddLogging(builder =>
             {

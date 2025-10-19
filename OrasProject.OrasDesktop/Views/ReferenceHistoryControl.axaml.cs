@@ -43,6 +43,7 @@ public partial class ReferenceHistoryControl : UserControl
             // GotFocus is now wired in XAML
             textBox.LostFocus += ReferenceTextBox_LostFocus;
             textBox.TextChanged += ReferenceTextBox_TextChanged;
+            textBox.DoubleTapped += ReferenceTextBox_DoubleTapped;
             // Use AddHandler with Tunnel to catch PointerPressed before TextBox handles it
             textBox.AddHandler(PointerPressedEvent, ReferenceTextBox_PointerPressed, RoutingStrategies.Tunnel);
             textBox.AddHandler(KeyDownEvent, ReferenceTextBox_KeyDown, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
@@ -162,8 +163,39 @@ public partial class ReferenceHistoryControl : UserControl
         }
     }
 
+    private void ReferenceTextBox_DoubleTapped(object? sender, RoutedEventArgs e)
+    {
+        // On double-tap, close dropdown (if opened by first click) and select all text
+        if (sender is TextBox textBox && DataContext is ReferenceHistoryViewModel viewModel)
+        {
+            // Close dropdown that may have been opened by the first click
+            viewModel.IsDropDownOpen = false;
+            
+            // Select all text
+            textBox.SelectAll();
+            
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("TextBox double-tapped, closed dropdown and selected all text.");
+            }
+            
+            e.Handled = true;
+        }
+    }
+
     private void ReferenceTextBox_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        // Only handle single clicks (ClickCount == 1)
+        // Double-clicks are handled by DoubleTapped event
+        if (e.ClickCount != 1)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Skipping PointerPressed for ClickCount={ClickCount}.", e.ClickCount);
+            }
+            return;
+        }
+        
         // Clear suppression flag when clicking - user explicitly wants to interact with the textbox
         _suppressFocusOpen = false;
         

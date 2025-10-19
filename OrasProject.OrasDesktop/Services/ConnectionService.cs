@@ -91,9 +91,9 @@ public class ConnectionService
                 Url = registryUrl,
                 IsSecure = isSecure,
                 AuthenticationType = authType,
-                Username = username,
-                Password = password,
-                Token = token
+                Username = username ?? string.Empty,
+                Password = password ?? string.Empty,
+                Token = token ?? string.Empty
             };
 
             // Initialize registry service with connection settings
