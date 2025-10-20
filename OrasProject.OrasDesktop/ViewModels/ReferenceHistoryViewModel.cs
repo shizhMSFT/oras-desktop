@@ -175,6 +175,11 @@ public class ReferenceHistoryViewModel : ViewModelBase
     public event EventHandler? LoadRequested;
 
     /// <summary>
+    /// Event raised when the textbox should receive focus
+    /// </summary>
+    public event EventHandler? FocusRequested;
+
+    /// <summary>
     /// Adds a reference to history if it was successfully loaded.
     /// If the reference already exists, moves it to the top.
     /// Private - history is automatically managed via ManifestService event subscription.
@@ -444,5 +449,13 @@ public class ReferenceHistoryViewModel : ViewModelBase
     public void RequestLoad()
     {
         LoadRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Requests focus on the textbox
+    /// </summary>
+    public void RequestFocus()
+    {
+        FocusRequested?.Invoke(this, EventArgs.Empty);
     }
 }

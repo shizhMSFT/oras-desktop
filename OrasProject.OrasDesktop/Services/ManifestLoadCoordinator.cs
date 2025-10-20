@@ -63,6 +63,62 @@ public class ManifestLoadCoordinator
     /// </summary>
     public event EventHandler<DigestSelectionRequestedEventArgs>? DigestSelectionRequested;
 
+    /// <summary>
+    /// Event raised when navigation to a repository/tag is requested
+    /// </summary>
+    public event EventHandler<NavigationRequestedEventArgs>? NavigationRequested;
+
+    /// <summary>
+    /// Attempts to navigate to a reference by selecting the repository and tag in the UI
+    /// </summary>
+    public Task<bool> TryNavigateToReferenceAsync(string reference, bool selectTag = true)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || _artifactService.CurrentRegistry == null)
+        {
+            return Task.FromResult(false);
+        }
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("Attempting to navigate to reference: {Reference}, selectTag={SelectTag}", reference, selectTag);
+        }
+
+        try
+        {
+            var parsed = ParseReferenceForNavigation(reference);
+            if (parsed == null || !IsCurrentRegistry(parsed.RegistryHost))
+            {
+                return Task.FromResult(false);
+            }
+
+            // Skip navigation for digest references
+            if (parsed.IsDigest)
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Skipping UI navigation for digest reference {Reference}", reference);
+                }
+                return Task.FromResult(false);
+            }
+
+            // Fire navigation event for UI coordination
+            NavigationRequested?.Invoke(this, new NavigationRequestedEventArgs(
+                parsed.Repository,
+                parsed.TagOrDigest,
+                selectTag));
+
+            return Task.FromResult(true);
+        }
+        catch (Exception ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning(ex, "Failed to navigate to reference {Reference}", reference);
+            }
+            return Task.FromResult(false);
+        }
+    }
+
     private async void OnManifestLoadCompleted(object? sender, ManifestLoadedEventArgs e)
     {
         // Only coordinate for ReferenceBox loads (user typed a reference)
@@ -366,6 +422,65 @@ public class ManifestLoadCoordinator
         return null;
     }
 
+    /// <summary>
+    /// Parses a reference for navigation purposes
+    /// </summary>
+    private NavigationReference? ParseReferenceForNavigation(string reference)
+    {
+        var parts = reference.Split('/', 2);
+        if (parts.Length < 2)
+        {
+            return null;
+        }
+
+        var registryHost = parts[0];
+        var remainder = parts[1];
+
+        // Check if this is a digest reference
+        bool isDigest = remainder.Contains("@sha256:") || remainder.Contains("@sha512:");
+
+        string repository;
+        string tagOrDigest;
+
+        if (isDigest)
+        {
+            var digestParts = remainder.Split('@', 2);
+            repository = digestParts[0];
+            tagOrDigest = digestParts.Length > 1 ? digestParts[1] : string.Empty;
+        }
+        else
+        {
+            var tagParts = remainder.Split(':', 2);
+            repository = tagParts[0];
+            tagOrDigest = tagParts.Length > 1 ? tagParts[1] : "latest";
+        }
+
+        return new NavigationReference
+        {
+            RegistryHost = registryHost,
+            Repository = repository,
+            TagOrDigest = tagOrDigest,
+            IsDigest = isDigest
+        };
+    }
+
+    /// <summary>
+    /// Checks if the given registry host matches the current registry
+    /// </summary>
+    private bool IsCurrentRegistry(string registryHost)
+    {
+        return _artifactService.CurrentRegistry != null &&
+               _artifactService.CurrentRegistry.Url.Contains(registryHost, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private class NavigationReference
+    {
+        public string RegistryHost { get; set; } = string.Empty;
+        public string Repository { get; set; } = string.Empty;
+        public string TagOrDigest { get; set; } = string.Empty;
+        public bool IsDigest { get; set; }
+    }
+
     private class ReferenceComponents
     {
         public string RegistryUrl { get; set; } = string.Empty;
@@ -398,6 +513,23 @@ public class DigestSelectionRequestedEventArgs : EventArgs
     public DigestSelectionRequestedEventArgs(string digest)
     {
         Digest = digest;
+    }
+}
+
+/// <summary>
+/// Event arguments for requesting navigation to a repository/tag
+/// </summary>
+public class NavigationRequestedEventArgs : EventArgs
+{
+    public string Repository { get; }
+    public string TagOrDigest { get; }
+    public bool SelectTag { get; }
+
+    public NavigationRequestedEventArgs(string repository, string tagOrDigest, bool selectTag)
+    {
+        Repository = repository;
+        TagOrDigest = tagOrDigest;
+        SelectTag = selectTag;
     }
 }
 

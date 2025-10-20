@@ -22,6 +22,7 @@
         VerticalAlignment="Center"
         Text="Tags" />
       <Button
+        Classes="icon-button"
         Width="20"
         Height="20"
         Padding="2"
@@ -40,6 +41,7 @@
     <TextBox
       Grid.Row="1"
       Name="TagFilterTextBox"
+      Classes="modern-input"
       Margin="0,0,0,3"
       VerticalContentAlignment="Center"
       Watermark="Filter tags (use * for wildcards)..."
@@ -50,6 +52,8 @@
     <ListBox
       Grid.Row="2"
       Name="TagsListBox"
+      Classes="clean-list"
+      Margin="0,0,10,0"
       ItemsSource="{Binding Tags}"
       SelectedItem="{Binding SelectedTag, Mode=TwoWay}">
       <ListBox.KeyBindings>

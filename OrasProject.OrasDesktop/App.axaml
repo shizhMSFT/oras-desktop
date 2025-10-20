@@ -19,8 +19,17 @@
                     <SolidColorBrush x:Key="ArtifactValueBrush">#1A1A1A</SolidColorBrush>
                     <SolidColorBrush x:Key="TabSelectedBackground">#0078D4</SolidColorBrush>
                     <SolidColorBrush x:Key="TabSelectedForeground">#FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="TabContentBackground">#FFFFFF</SolidColorBrush>
-                    <SolidColorBrush x:Key="TabContentBorder">#D0D0D0</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBackground">#F9F9FB</SolidColorBrush>
+                    <SolidColorBrush x:Key="TabContentBorder">#DADADF</SolidColorBrush>
+                    
+                    <!-- Modern TextBox Colors -->
+                    <SolidColorBrush x:Key="ModernTextBoxBackground">#F0F0F0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorder">#D0D0D0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorderPointerOver">#A0A0A0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorderFocused">#0078D4</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxForeground">#1A1A1A</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxPlaceholder">#707070</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxSelectionForeground">#FFFFFF</SolidColorBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ArtifactPanelBackground">#2D2D30</SolidColorBrush>
@@ -31,6 +40,15 @@
                     <SolidColorBrush x:Key="TabSelectedForeground">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="TabContentBackground">#1E1E1E</SolidColorBrush>
                     <SolidColorBrush x:Key="TabContentBorder">#3F3F46</SolidColorBrush>
+                    
+                    <!-- Modern TextBox Colors -->
+                    <SolidColorBrush x:Key="ModernTextBoxBackground">#1E1E1E</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorder">#3F3F46</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorderPointerOver">#505057</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxBorderFocused">#0078D4</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxForeground">#E0E0E0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxPlaceholder">#707070</SolidColorBrush>
+                    <SolidColorBrush x:Key="ModernTextBoxSelectionForeground">#FFFFFF</SolidColorBrush>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
@@ -81,6 +99,66 @@
         </Style>
         <Style Selector="TreeView.code-view:dark">
             <Setter Property="Foreground" Value="#D4D4D4" />
+        </Style>
+        
+        <!-- Modern TextBox Style - Rounded corners with no border by default -->
+        <Style Selector="TextBox.modern-input">
+            <Setter Property="Background" Value="{DynamicResource ModernTextBoxBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource ModernTextBoxForeground}" />
+            <Setter Property="SelectionForegroundBrush" Value="{DynamicResource ModernTextBoxSelectionForeground}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        
+        <!-- Ensure background is applied to template -->
+        <Style Selector="TextBox.modern-input /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource ModernTextBoxBackground}" />
+        </Style>
+        
+        <!-- Hover state - show subtle border -->
+        <Style Selector="TextBox.modern-input:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource ModernTextBoxBorderPointerOver}" />
+        </Style>
+        
+        <!-- Focus state - show accent border -->
+        <Style Selector="TextBox.modern-input:focus /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource ModernTextBoxBorderFocused}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        
+        <!-- Placeholder text color -->
+        <Style Selector="TextBox.modern-input /template/ TextBlock#PART_Watermark">
+            <Setter Property="Foreground" Value="{DynamicResource ModernTextBoxPlaceholder}" />
+        </Style>
+        
+        <!-- Global TextBox selection foreground for better readability -->
+        <Style Selector="TextBox">
+            <Setter Property="SelectionForegroundBrush" Value="{DynamicResource ModernTextBoxSelectionForeground}" />
+        </Style>
+        
+        <!-- Transparent background for ListBox and TreeView -->
+        <Style Selector="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TreeView">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        
+        <!-- Clean icon button style - transparent with subtle hover -->
+        <Style Selector="Button.icon-button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style Selector="Button.icon-button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+        </Style>
+        <Style Selector="Button.icon-button:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}" />
         </Style>
     </Application.Styles>
 </Application>
