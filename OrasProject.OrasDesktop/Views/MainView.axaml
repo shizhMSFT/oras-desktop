@@ -80,21 +80,41 @@
                 Width="28"
                 Height="28"
                 Padding="0"
-                Command="{Binding DeleteManifestCommand}"
-                IsEnabled="{Binding CanModifySelectedTag}"
-                ToolTip.Tip="Delete manifest"
-                HorizontalAlignment="Right">
+                Command="{Binding ArtifactActionsCommand}"
+                ToolTip.Tip="Artifact actions"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center">
+                <Button.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedRight">
+                    <MenuItem Header="Copy fully qualified tag reference" Command="{Binding CopyReferenceWithTagCommand}">
+                      <MenuItem.Icon>
+                        <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+                      </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Copy fully qualified digest reference" Command="{Binding CopyReferenceWithDigestCommand}">
+                      <MenuItem.Icon>
+                        <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+                      </MenuItem.Icon>
+                    </MenuItem>
+                    <Separator />
+                    <MenuItem Header="Delete Manifest" Command="{Binding DeleteManifestCommand}">
+                      <MenuItem.Icon>
+                        <PathIcon Data="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" Foreground="#DC3545" />
+                      </MenuItem.Icon>
+                    </MenuItem>
+                  </MenuFlyout>
+                </Button.Flyout>
                 <Button.Styles>
                   <Style Selector="Button:disabled">
                     <Setter Property="Opacity" Value="0.3" />
                   </Style>
                 </Button.Styles>
-                <Path
-                  Width="16"
-                  Height="16"
-                  Data="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
-                  Fill="{DynamicResource ButtonForeground}"
-                  Stretch="Uniform" />
+                <Viewbox Width="16" Height="16">
+                  <Path
+                    Data="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z"
+                    Fill="{DynamicResource ButtonForeground}"
+                    Stretch="Uniform" />
+                </Viewbox>
               </Button>
             </Grid>
             

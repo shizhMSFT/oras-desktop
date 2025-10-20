@@ -38,15 +38,11 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         // Properties
         private TextBlock? _manifestViewer;
-        private Manifest? _currentManifest;
 
         private string _selectedTagReference = string.Empty;
         private string _manifestContent = string.Empty;
         private ObservableCollection<ReferrerNode> _referrers = new();
         private bool _referrersLoading;
-        private string _artifactSizeSummary = string.Empty;
-        private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
-        private bool _hasPlatformSizes = false;
         private DigestContextMenuViewModel _digestContextMenu = new();
         private ReferrerNodeContextMenuViewModel _referrerNodeContextMenu = new();
         private string _currentRepositoryPath = string.Empty; // Repository path without registry URL
@@ -61,6 +57,9 @@ namespace OrasProject.OrasDesktop.ViewModels
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteManifestCommand { get; }
         public ReactiveCommand<Unit, Unit> CopyReferenceCommand { get; }
+        public ReactiveCommand<Unit, Unit> CopyReferenceWithTagCommand { get; }
+        public ReactiveCommand<Unit, Unit> CopyReferenceWithDigestCommand { get; }
+        public ReactiveCommand<Unit, Unit> ArtifactActionsCommand { get; }
         public ReactiveCommand<bool, Unit> ForceLoginCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadManifestByReferenceCommand { get; }
         public ReactiveCommand<PlatformImageSize, Unit> ViewPlatformManifestCommand { get; }
@@ -114,8 +113,89 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Initialize commands
             ConnectCommand = ReactiveCommand.CreateFromTask(ConnectToRegistryAsync);
             ForceLoginCommand = ReactiveCommand.CreateFromTask<bool>(forceLogin => ConnectToRegistryAsync(Connection.RegistryUrl, forceLogin));
-            DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync);
+            
+            // DeleteManifestCommand - enabled when a manifest is loaded
+            // Create an observable that updates when manifest changes
+            var canDeleteObservable = Observable.Create<bool>(observer =>
+            {
+                // Initial value
+                var initialValue = _artifactService.CanDeleteManifest();
+                _logger.LogInformation("CanDelete observable: Initial value = {InitialValue}", initialValue);
+                observer.OnNext(initialValue);
+                
+                // Subscribe to manifest changes
+                EventHandler<ManifestChangedEventArgs> manifestChangedHandler = (s, e) =>
+                {
+                    var canDelete = _artifactService.CanDeleteManifest();
+                    _logger.LogInformation("CanDelete observable: ManifestChanged, new value = {CanDelete}", canDelete);
+                    observer.OnNext(canDelete);
+                };
+                
+                EventHandler<RepositoryChangedEventArgs> repositoryChangedHandler = (s, e) =>
+                {
+                    var canDelete = _artifactService.CanDeleteManifest();
+                    _logger.LogInformation("CanDelete observable: RepositoryChanged, new value = {CanDelete}", canDelete);
+                    observer.OnNext(canDelete);
+                };
+                
+                _artifactService.ManifestChanged += manifestChangedHandler;
+                _artifactService.RepositoryChanged += repositoryChangedHandler;
+                
+                // Cleanup
+                return System.Reactive.Disposables.Disposable.Create(() =>
+                {
+                    _artifactService.ManifestChanged -= manifestChangedHandler;
+                    _artifactService.RepositoryChanged -= repositoryChangedHandler;
+                });
+            });
+            
+            // Create an observable for copy tag command - only enabled when tag is available
+            var canCopyTagObservable = Observable.Create<bool>(observer =>
+            {
+                // Helper function to check if tag is available
+                bool CanCopyTag() => _artifactService.CanDeleteManifest() && _artifactService.CurrentTag != null;
+                
+                // Initial value
+                observer.OnNext(CanCopyTag());
+                
+                // Subscribe to tag, manifest, and repository changes
+                EventHandler<TagChangedEventArgs> tagChangedHandler = (s, e) =>
+                {
+                    observer.OnNext(CanCopyTag());
+                };
+                
+                EventHandler<ManifestChangedEventArgs> manifestChangedHandler = (s, e) =>
+                {
+                    observer.OnNext(CanCopyTag());
+                };
+                
+                EventHandler<RepositoryChangedEventArgs> repositoryChangedHandler = (s, e) =>
+                {
+                    observer.OnNext(CanCopyTag());
+                };
+                
+                _artifactService.TagChanged += tagChangedHandler;
+                _artifactService.ManifestChanged += manifestChangedHandler;
+                _artifactService.RepositoryChanged += repositoryChangedHandler;
+                
+                // Cleanup
+                return System.Reactive.Disposables.Disposable.Create(() =>
+                {
+                    _artifactService.TagChanged -= tagChangedHandler;
+                    _artifactService.ManifestChanged -= manifestChangedHandler;
+                    _artifactService.RepositoryChanged -= repositoryChangedHandler;
+                });
+            });
+            
+            DeleteManifestCommand = ReactiveCommand.CreateFromTask(DeleteManifestAsync, canDeleteObservable);
+            
+            // ArtifactActionsCommand - just a dummy command for the button, the actual work is done by menu item commands
+            ArtifactActionsCommand = ReactiveCommand.Create(() => { }, canDeleteObservable);
+            
             CopyReferenceCommand = ReactiveCommand.CreateFromTask(CopyReferenceToClipboardAsync);
+            CopyReferenceWithTagCommand = ReactiveCommand.CreateFromTask(CopyReferenceWithTagAsync, canCopyTagObservable);
+            CopyReferenceWithDigestCommand = ReactiveCommand.CreateFromTask(CopyReferenceWithDigestAsync, canDeleteObservable);
+            
             LoadManifestByReferenceCommand = ReactiveCommand.Create(() =>
             {
                 var reference = ReferenceHistory.CurrentReference?.Trim();
@@ -184,6 +264,37 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Wire up ManifestLoadCoordinator events
             _manifestLoadCoordinator.RepositorySelectionRequested += OnCoordinatorRepositorySelectionRequested;
             _manifestLoadCoordinator.TagSelectionRequested += OnCoordinatorTagSelectionRequested;
+            
+            // Wire up ArtifactService events to raise property changed notifications
+            _artifactService.ManifestChanged += (s, e) =>
+            {
+                try
+                {
+                    this.RaisePropertyChanged(nameof(CurrentManifest));
+                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "MainViewModel: Error in ManifestChanged handler");
+                }
+            };
+            _artifactService.RepositoryChanged += (s, e) =>
+            {
+                try
+                {
+                    this.RaisePropertyChanged(nameof(CanModifySelectedTag));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "MainViewModel: Error in RepositoryChanged handler");
+                }
+            };
+            _artifactService.ArtifactSizeUpdated += (s, e) =>
+            {
+                this.RaisePropertyChanged(nameof(ArtifactSizeSummary));
+                this.RaisePropertyChanged(nameof(PlatformImageSizes));
+                this.RaisePropertyChanged(nameof(HasPlatformSizes));
+            };
         }
        public TextBlock? ManifestViewer
         {
@@ -229,23 +340,13 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
-        public string ArtifactSizeSummary
-        {
-            get => _artifactSizeSummary;
-            set => this.RaiseAndSetIfChanged(ref _artifactSizeSummary, value);
-        }
+        public string ArtifactSizeSummary => _artifactService.ArtifactSizeSummary;
 
-        public ObservableCollection<PlatformImageSize> PlatformImageSizes
-        {
-            get => _platformImageSizes;
-            set => this.RaiseAndSetIfChanged(ref _platformImageSizes, value);
-        }
+        public ObservableCollection<PlatformImageSize> PlatformImageSizes => _artifactService.PlatformImageSizes;
 
-        public bool HasPlatformSizes
-        {
-            get => _hasPlatformSizes;
-            set => this.RaiseAndSetIfChanged(ref _hasPlatformSizes, value);
-        }
+        public bool HasPlatformSizes => _artifactService.HasPlatformSizes;
+
+        public Manifest? CurrentManifest => _artifactService.CurrentManifest;
 
         public DigestContextMenuViewModel DigestContextMenu
         {
@@ -340,14 +441,8 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
         }
 
-        public Manifest? CurrentManifest
-        {
-            get => _currentManifest;
-            private set => this.RaiseAndSetIfChanged(ref _currentManifest, value);
-        }
-
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.
-        public bool CanModifySelectedTag => _artifactService.CurrentTag != null;
+        public bool CanModifySelectedTag => _artifactService.CanDeleteManifest();
 
         public int SelectedTabIndex
         {
@@ -493,45 +588,6 @@ namespace OrasProject.OrasDesktop.ViewModels
             await Task.CompletedTask; // Keep async signature for command binding
         }
 
-        /// <summary>
-        /// Calculates and updates artifact size information for the current manifest
-        /// </summary>
-        private async Task CalculateArtifactSizeAsync(string repositoryPath, ManifestResult manifest)
-        {
-            try
-            {
-                // Reset previous data
-                PlatformImageSizes.Clear();
-                HasPlatformSizes = false;
-
-                // Calculate new size information
-                var (summary, platformSizes, hasPlatforms) = await ArtifactSizeCalculator.AnalyzeManifestSizeAsync(
-                    _registryService,
-                    repositoryPath,
-                    manifest,
-                    default);
-
-                // Update UI
-                ArtifactSizeSummary = summary;
-
-                if (hasPlatforms && platformSizes.Count > 0)
-                {
-                    // Sort platforms alphabetically
-                    foreach (var platform in platformSizes.OrderBy(p => p.Platform))
-                    {
-                        PlatformImageSizes.Add(platform);
-                    }
-                    HasPlatformSizes = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                // In case of errors, just show basic information
-                ArtifactSizeSummary = $"Size calculation error: {ex.Message}";
-                HasPlatformSizes = false;
-            }
-        }
-
         private async Task LoadReferrersAsync(string repositoryPath, string digest, string reference)
         {
             ReferrersLoading = true;
@@ -602,9 +658,9 @@ namespace OrasProject.OrasDesktop.ViewModels
 
         private async Task DeleteManifestAsync()
         {
-            if (_artifactService.CurrentTag == null)
+            if (!_artifactService.CanDeleteManifest())
             {
-                _statusService.SetStatus("No tag selected", isError: true);
+                _statusService.SetStatus("No manifest to delete", isError: true);
                 return;
             }
 
@@ -615,18 +671,29 @@ namespace OrasProject.OrasDesktop.ViewModels
                 return;
             }
 
-            if (_artifactService.CurrentRegistry == null)
+            if (_artifactService.CurrentRegistry == null || _artifactService.CurrentRepository == null || _artifactService.CurrentManifest == null)
             {
-                _statusService.SetStatus("No registry connected", isError: true);
+                _statusService.SetStatus("No registry, repository, or manifest loaded", isError: true);
                 return;
             }
 
-            // Calculate the full reference for the manifest
-            string manifestRepoPath = _artifactService.CurrentTag.Repository!.FullPath.Replace(
+            // Calculate the full reference for the manifest (handle both tag and digest references)
+            string manifestRepoPath = _artifactService.CurrentRepository.FullPath.Replace(
                 $"{_artifactService.CurrentRegistry.Url}/",
                 string.Empty
             );
-            string fullReference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}:{_artifactService.CurrentTag.Name}";
+            
+            string fullReference;
+            if (_artifactService.CurrentTag != null)
+            {
+                // Tag reference
+                fullReference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}:{_artifactService.CurrentTag.Name}";
+            }
+            else
+            {
+                // Digest reference
+                fullReference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}@{_artifactService.CurrentManifest.Digest}";
+            }
 
             // Show delete confirmation dialog
             var dialog = new DeleteManifestDialog(fullReference);
@@ -638,37 +705,28 @@ namespace OrasProject.OrasDesktop.ViewModels
             }
 
             _statusService.SetBusy(true);
-            _statusService.SetStatus($"Deleting manifest for {_artifactService.CurrentTag.Name}...");
-
-            // Store the tag name before deletion to use in status message later
-            string tagName = _artifactService.CurrentTag.Name;
+            var referenceDesc = _artifactService.CurrentTag != null 
+                ? _artifactService.CurrentTag.Name 
+                : _artifactService.CurrentManifest.Digest.Substring(0, 12) + "...";
+            _statusService.SetStatus($"Deleting manifest for {referenceDesc}...");
 
             try
             {
-                var repoPath = _artifactService.CurrentTag.Repository!.FullPath.Replace(
-                    $"{_artifactService.CurrentRegistry.Url}/",
-                    string.Empty
-                );
+                var (success, message) = await _artifactService.DeleteManifestAsync();
 
-                var manifest = await _registryService.GetManifestByTagAsync(
-                    repoPath,
-                    tagName,
-                    default
-                );
-                await _registryService.DeleteManifestAsync(repoPath, manifest.Digest, default);
-
-                // Refresh tags
-                await RefreshTagsAsync();
-
-                _statusService.SetStatus($"Deleted manifest for {tagName}");
-            }
-            catch (Services.RegistryOperationException regEx)
-            {
-                _statusService.SetStatus(regEx.Message, isError: true);
-            }
-            catch (Exception ex)
-            {
-                _statusService.SetStatus($"Error deleting manifest: {ex.Message}", isError: true);
+                if (success)
+                {
+                    // Only refresh tags if we have a tag selected
+                    if (_artifactService.CurrentTag != null)
+                    {
+                        await RefreshTagsAsync();
+                    }
+                    _statusService.SetStatus(message);
+                }
+                else
+                {
+                    _statusService.SetStatus(message, isError: true);
+                }
             }
             finally
             {
@@ -696,6 +754,84 @@ namespace OrasProject.OrasDesktop.ViewModels
                 {
                     await topLevel.Clipboard!.SetTextAsync(reference);
                     _statusService.SetStatus("Reference copied to clipboard");
+                }
+                else
+                {
+                    _statusService.SetStatus("Failed to access clipboard", isError: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusService.SetStatus($"Error copying reference: {ex.Message}", isError: true);
+            }
+        }
+
+        private async Task CopyReferenceWithTagAsync()
+        {
+            if (_artifactService.CurrentRegistry == null || _artifactService.CurrentRepository == null)
+            {
+                _statusService.SetStatus("No manifest loaded", isError: true);
+                return;
+            }
+
+            try
+            {
+                string manifestRepoPath = _artifactService.CurrentRepository.FullPath.Replace(
+                    $"{_artifactService.CurrentRegistry.Url}/",
+                    string.Empty
+                );
+
+                string reference;
+                if (_artifactService.CurrentTag != null)
+                {
+                    // Use the actual tag
+                    reference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}:{_artifactService.CurrentTag.Name}";
+                }
+                else
+                {
+                    _statusService.SetStatus("No tag available for this manifest", isError: true);
+                    return;
+                }
+
+                var topLevel = TopLevel.GetTopLevel(GetMainWindow());
+                if (topLevel != null)
+                {
+                    await topLevel.Clipboard!.SetTextAsync(reference);
+                    _statusService.SetStatus("Reference with tag copied to clipboard");
+                }
+                else
+                {
+                    _statusService.SetStatus("Failed to access clipboard", isError: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusService.SetStatus($"Error copying reference: {ex.Message}", isError: true);
+            }
+        }
+
+        private async Task CopyReferenceWithDigestAsync()
+        {
+            if (_artifactService.CurrentRegistry == null || _artifactService.CurrentRepository == null || _artifactService.CurrentManifest == null)
+            {
+                _statusService.SetStatus("No manifest loaded", isError: true);
+                return;
+            }
+
+            try
+            {
+                string manifestRepoPath = _artifactService.CurrentRepository.FullPath.Replace(
+                    $"{_artifactService.CurrentRegistry.Url}/",
+                    string.Empty
+                );
+
+                string reference = $"{_artifactService.CurrentRegistry.Url}/{manifestRepoPath}@{_artifactService.CurrentManifest.Digest}";
+
+                var topLevel = TopLevel.GetTopLevel(GetMainWindow());
+                if (topLevel != null)
+                {
+                    await topLevel.Clipboard!.SetTextAsync(reference);
+                    _statusService.SetStatus("Reference with digest copied to clipboard");
                 }
                 else
                 {
@@ -873,8 +1009,9 @@ namespace OrasProject.OrasDesktop.ViewModels
                     );
                 }
 
-                // Create a new manifest object
-                CurrentManifest = new Manifest
+                // Create a new manifest object and set it in ArtifactService
+                // This will also calculate artifact size automatically
+                var newManifest = new Manifest
                 {
                     RawContent = manifest.Json,
                     Digest = manifest.Digest,
@@ -882,24 +1019,23 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
 
-                ManifestContent = CurrentManifest.RawContent;
+                await _artifactService.SetManifestAsync(newManifest, repository);
+
+                ManifestContent = newManifest.RawContent;
                 _currentRepositoryPath = repository; // Store for referrer context menu
 
                 // Update digest context menu
-                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Digest = newManifest.Digest;
                 DigestContextMenu.Repository = repository;
                 DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
-
-                // Calculate artifact size information
-                await CalculateArtifactSizeAsync(repository, manifest);
+                ManifestViewer = _jsonHighlightService.HighlightJson(newManifest.RawContent);
 
                 // Load referrers
                 _statusService.SetProgress(0);
                 // Progress indeterminate handled by SetProgress
-                _ = LoadReferrersAsync(repository, CurrentManifest.Digest, originalReference);
+                _ = LoadReferrersAsync(repository, newManifest.Digest, originalReference);
 
                 // IMPORTANT: Preserve the original pasted reference instead of resetting it
                 SelectedTagReference = originalReference;
@@ -968,8 +1104,8 @@ namespace OrasProject.OrasDesktop.ViewModels
                     default
                 );
 
-                // Update the current manifest
-                CurrentManifest = new Manifest
+                // Create and set the manifest in ArtifactService (will calculate size automatically)
+                var newManifest = new Manifest
                 {
                     RawContent = manifest.Json,
                     Digest = manifest.Digest,
@@ -977,16 +1113,18 @@ namespace OrasProject.OrasDesktop.ViewModels
                     MediaType = manifest.MediaType,
                 };
 
-                ManifestContent = CurrentManifest.RawContent;
+                await _artifactService.SetManifestAsync(newManifest, repoPath);
+
+                ManifestContent = newManifest.RawContent;
                 _currentRepositoryPath = repoPath; // Store for referrer context menu
 
                 // Update digest context menu
-                DigestContextMenu.Digest = CurrentManifest.Digest;
+                DigestContextMenu.Digest = newManifest.Digest;
                 DigestContextMenu.Repository = repoPath;
                 DigestContextMenu.RegistryUrl = _artifactService.CurrentRegistry?.Url ?? string.Empty;
 
                 // Create a highlighted and selectable text block
-                ManifestViewer = _jsonHighlightService.HighlightJson(CurrentManifest.RawContent);
+                ManifestViewer = _jsonHighlightService.HighlightJson(newManifest.RawContent);
 
                 // Update the selected tag reference to use the digest of the platform-specific manifest
                 string platformReference = SelectedTagReference;
@@ -1000,7 +1138,7 @@ namespace OrasProject.OrasDesktop.ViewModels
                 // Kick off referrers load (fire and forget, separate status message)
                 _statusService.SetProgress(0);
                 // Progress indeterminate handled by SetProgress
-                _ = LoadReferrersAsync(repoPath, CurrentManifest.Digest, platformReference);
+                _ = LoadReferrersAsync(repoPath, newManifest.Digest, platformReference);
 
                 _statusService.SetStatus($"Loaded manifest for platform {platformSize.Platform}");
             }
