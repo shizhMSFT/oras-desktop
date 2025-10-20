@@ -181,6 +181,38 @@ public class TagSelectorViewModel : ViewModelBase
         }
     }
     
+    /// <summary>
+    /// Finds and selects a tag that matches the given digest, if one exists.
+    /// Clears selection if no matching tag is found.
+    /// This is used when a manifest is loaded by digest to sync the tag list.
+    /// </summary>
+    /// <param name="digest">The manifest digest (e.g., sha256:abc123...)</param>
+    /// <returns>True if a matching tag was found and selected, false otherwise</returns>
+    public bool TrySelectTagByDigest(string digest)
+    {
+        if (string.IsNullOrWhiteSpace(digest))
+        {
+            UpdateSelectedTagSilently(null);
+            return false;
+        }
+        
+        // Find a tag that points to this digest
+        var matchingTag = Tags.FirstOrDefault(t => 
+            !string.IsNullOrEmpty(t.Digest) && 
+            string.Equals(t.Digest, digest, StringComparison.OrdinalIgnoreCase));
+        
+        if (matchingTag != null)
+        {
+            // Found a tag that points to this digest - select it
+            UpdateSelectedTagSilently(matchingTag);
+            return true;
+        }
+        
+        // No matching tag found - clear selection since this digest has no tag
+        UpdateSelectedTagSilently(null);
+        return false;
+    }
+    
     private void RequestRefresh()
     {
         RefreshRequested?.Invoke(this, EventArgs.Empty);

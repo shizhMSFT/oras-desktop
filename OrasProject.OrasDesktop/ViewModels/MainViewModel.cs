@@ -264,6 +264,7 @@ namespace OrasProject.OrasDesktop.ViewModels
             // Wire up ManifestLoadCoordinator events
             _manifestLoadCoordinator.RepositorySelectionRequested += OnCoordinatorRepositorySelectionRequested;
             _manifestLoadCoordinator.TagSelectionRequested += OnCoordinatorTagSelectionRequested;
+            _manifestLoadCoordinator.DigestSelectionRequested += OnCoordinatorDigestSelectionRequested;
             
             // Wire up ArtifactService events to raise property changed notifications
             _artifactService.ManifestChanged += (s, e) =>
@@ -1532,6 +1533,36 @@ namespace OrasProject.OrasDesktop.ViewModels
             else if (_logger.IsEnabled(LogLevel.Warning))
             {
                 _logger.LogWarning("Tag {Tag} not found in loaded tags", e.TagName);
+            }
+        }
+
+        /// <summary>
+        /// Handles digest-based tag selection request from ManifestLoadCoordinator
+        /// This is called when a manifest is loaded by digest to sync the tag list
+        /// </summary>
+        private void OnCoordinatorDigestSelectionRequested(object? sender, DigestSelectionRequestedEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("ManifestLoadCoordinator requested digest-based tag sync: {Digest}", e.Digest);
+            }
+
+            // Try to find and select a tag that matches this digest
+            bool found = TagSelector.TrySelectTagByDigest(e.Digest);
+            
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                if (found)
+                {
+                    _logger.LogInformation("Found tag matching digest {Digest}: {Tag}", 
+                        e.Digest.Substring(0, Math.Min(20, e.Digest.Length)), 
+                        TagSelector.SelectedTag?.Name ?? "<none>");
+                }
+                else
+                {
+                    _logger.LogInformation("No tag found matching digest {Digest}, selection cleared", 
+                        e.Digest.Substring(0, Math.Min(20, e.Digest.Length)));
+                }
             }
         }
     }
