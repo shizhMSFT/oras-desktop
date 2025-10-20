@@ -57,6 +57,11 @@ public class ManifestLoadCoordinator
     /// Event raised when a repository should be selected in the UI
     /// </summary>
     public event EventHandler<RepositorySelectionRequestedEventArgs>? RepositorySelectionRequested;
+    
+    /// <summary>
+    /// Event raised when a manifest is loaded by digest and tags should be synced based on digest
+    /// </summary>
+    public event EventHandler<DigestSelectionRequestedEventArgs>? DigestSelectionRequested;
 
     private async void OnManifestLoadCompleted(object? sender, ManifestLoadedEventArgs e)
     {
@@ -147,7 +152,15 @@ public class ManifestLoadCoordinator
             {
                 if (_logger.IsEnabled(LogLevel.Information))
                 {
-                    _logger.LogInformation("Reference is a digest, skipping tag selection");
+                    _logger.LogInformation("Reference is a digest, will sync tags after manifest loads");
+                }
+                // For digest references, we need to wait for the manifest to load
+                // Then we'll try to find a matching tag based on the loaded manifest's digest
+                // The actual digest from the manifest will be available via CurrentManifest
+                // We'll request digest-based tag syncing after tags are loaded
+                if (_artifactService.CurrentManifest != null)
+                {
+                    DigestSelectionRequested?.Invoke(this, new DigestSelectionRequestedEventArgs(_artifactService.CurrentManifest.Digest));
                 }
             }
         }
@@ -372,6 +385,19 @@ public class TagSelectionRequestedEventArgs : EventArgs
     public TagSelectionRequestedEventArgs(string tagName)
     {
         TagName = tagName;
+    }
+}
+
+/// <summary>
+/// Event arguments for requesting digest-based tag selection in the UI
+/// </summary>
+public class DigestSelectionRequestedEventArgs : EventArgs
+{
+    public string Digest { get; }
+
+    public DigestSelectionRequestedEventArgs(string digest)
+    {
+        Digest = digest;
     }
 }
 

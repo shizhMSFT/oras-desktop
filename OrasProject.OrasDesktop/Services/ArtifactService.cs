@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OrasProject.OrasDesktop.Models;
 using OrasProject.OrasDesktop.ViewModels;
@@ -8,25 +12,32 @@ using System.Reactive.Linq;
 namespace OrasProject.OrasDesktop.Services;
 
 /// <summary>
-/// Service that manages the current artifact context (registry, repository, tag/digest).
+/// Service that manages the current artifact context and manifest operations.
 /// Acts as a central state coordinator that notifies components when the artifact context changes.
-/// Coordinates between RepositorySelector, TagService, and StatusService.
+/// Handles manifest loading, size calculation, and artifact operations.
 /// </summary>
 public class ArtifactService
 {
     private readonly ILogger<ArtifactService> _logger;
+    private readonly IRegistryService _registryService;
     private readonly StatusService _statusService;
     private Registry? _currentRegistry;
     private Repository? _currentRepository;
     private Tag? _currentTag;
     private string _currentReference = string.Empty;
     private bool _isDigest = false;
+    private Manifest? _currentManifest;
+    private string _artifactSizeSummary = string.Empty;
+    private ObservableCollection<PlatformImageSize> _platformImageSizes = new();
+    private bool _hasPlatformSizes = false;
 
     public ArtifactService(
-        ILogger<ArtifactService> logger,
+        ILogger<ArtifactService> _logger,
+        IRegistryService registryService,
         StatusService statusService)
     {
-        _logger = logger;
+        this._logger = _logger;
+        _registryService = registryService;
         _statusService = statusService;
     }
     
@@ -110,6 +121,26 @@ public class ArtifactService
     public bool IsDigest => _isDigest;
 
     /// <summary>
+    /// Gets the current manifest
+    /// </summary>
+    public Manifest? CurrentManifest => _currentManifest;
+
+    /// <summary>
+    /// Gets the artifact size summary
+    /// </summary>
+    public string ArtifactSizeSummary => _artifactSizeSummary;
+
+    /// <summary>
+    /// Gets the platform-specific image sizes (for multi-platform manifests)
+    /// </summary>
+    public ObservableCollection<PlatformImageSize> PlatformImageSizes => _platformImageSizes;
+
+    /// <summary>
+    /// Gets whether the artifact has platform-specific sizes
+    /// </summary>
+    public bool HasPlatformSizes => _hasPlatformSizes;
+
+    /// <summary>
     /// Event raised when the registry changes
     /// </summary>
     public event EventHandler<RegistryChangedEventArgs>? RegistryChanged;
@@ -133,6 +164,16 @@ public class ArtifactService
     /// Event raised when the complete artifact context changes (all three: registry, repository, reference)
     /// </summary>
     public event EventHandler<ArtifactContextChangedEventArgs>? ArtifactContextChanged;
+
+    /// <summary>
+    /// Event raised when the manifest changes
+    /// </summary>
+    public event EventHandler<ManifestChangedEventArgs>? ManifestChanged;
+
+    /// <summary>
+    /// Event raised when artifact size information is updated
+    /// </summary>
+    public event EventHandler? ArtifactSizeUpdated;
 
     /// <summary>
     /// Sets the current registry
@@ -343,6 +384,177 @@ public class ArtifactService
         {
             _logger.LogInformation("Cleared authentication for registry {Registry}.", _currentRegistry.Url);
         }
+    }
+
+    /// <summary>
+    /// Sets the current manifest and calculates artifact size
+    /// </summary>
+    public async Task SetManifestAsync(Manifest? manifest, string repositoryPath, CancellationToken cancellationToken = default)
+    {
+        var oldManifest = _currentManifest;
+        _currentManifest = manifest;
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("Manifest changed: Digest={Digest}",
+                manifest?.Digest ?? "<none>");
+        }
+
+        ManifestChanged?.Invoke(this, new ManifestChangedEventArgs(oldManifest, manifest));
+
+        // Calculate artifact size if manifest is not null
+        if (manifest != null && !string.IsNullOrEmpty(repositoryPath))
+        {
+            await CalculateArtifactSizeAsync(repositoryPath, manifest.RawContent, manifest.MediaType, cancellationToken);
+        }
+        else
+        {
+            // Clear size information
+            _artifactSizeSummary = string.Empty;
+            _platformImageSizes.Clear();
+            _hasPlatformSizes = false;
+            ArtifactSizeUpdated?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Calculates and updates artifact size information
+    /// </summary>
+    private async Task CalculateArtifactSizeAsync(string repositoryPath, string manifestJson, string mediaType, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Clear previous platform sizes
+            _platformImageSizes.Clear();
+
+            // Create a ManifestResult to pass to the calculator
+            var manifestResult = new ManifestResult(
+                string.Empty, // digest - not needed for size calculation
+                mediaType,
+                manifestJson,
+                Array.Empty<string>() // referenced digests - not needed for size calculation
+            );
+
+            var result = await ArtifactSizeCalculator.AnalyzeManifestSizeAsync(
+                _registryService,
+                repositoryPath,
+                manifestResult,
+                cancellationToken
+            );
+
+            _artifactSizeSummary = result.summary;
+            _hasPlatformSizes = result.hasPlatformSizes;
+
+            foreach (var platform in result.platformSizes)
+            {
+                _platformImageSizes.Add(platform);
+            }
+
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Artifact size calculated: {Summary}, HasPlatformSizes={HasPlatformSizes}",
+                    _artifactSizeSummary, _hasPlatformSizes);
+            }
+
+            ArtifactSizeUpdated?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Error))
+            {
+                _logger.LogError(ex, "Failed to calculate artifact size");
+            }
+
+            _artifactSizeSummary = "Error calculating size";
+            _hasPlatformSizes = false;
+            ArtifactSizeUpdated?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a manifest can be deleted (requires a manifest and repository to be loaded)
+    /// </summary>
+    public bool CanDeleteManifest()
+    {
+        return _currentManifest != null && _currentRepository != null && _currentRegistry != null;
+    }
+
+    /// <summary>
+    /// Deletes the current manifest
+    /// </summary>
+    public async Task<(bool success, string message)> DeleteManifestAsync(CancellationToken cancellationToken = default)
+    {
+        if (_currentManifest == null)
+        {
+            return (false, "No manifest loaded");
+        }
+
+        if (_currentRepository == null)
+        {
+            return (false, "No repository selected");
+        }
+
+        if (_currentRegistry == null)
+        {
+            return (false, "No registry connected");
+        }
+
+        try
+        {
+            var repoPath = _currentRepository.FullPath.Replace(
+                $"{_currentRegistry.Url}/",
+                string.Empty
+            );
+
+            await _registryService.DeleteManifestAsync(repoPath, _currentManifest.Digest, cancellationToken);
+
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("Deleted manifest: {Digest}", _currentManifest.Digest);
+            }
+
+            // Clear the current manifest after deletion
+            await SetManifestAsync(null, string.Empty, cancellationToken);
+
+            // Create a friendly message
+            var referenceInfo = _currentTag != null ? $"tag {_currentTag.Name}" : $"digest {_currentManifest.Digest.Substring(0, 12)}...";
+            return (true, $"Deleted manifest for {referenceInfo}");
+        }
+        catch (RegistryOperationException regEx)
+        {
+            return (false, regEx.Message);
+        }
+        catch (Exception ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Error))
+            {
+                _logger.LogError(ex, "Failed to delete manifest");
+            }
+            return (false, $"Error deleting manifest: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Clears the current manifest
+    /// </summary>
+    public async Task ClearManifestAsync()
+    {
+        await SetManifestAsync(null, string.Empty);
+    }
+}
+
+/// <summary>
+/// Event arguments for manifest change events
+/// </summary>
+public class ManifestChangedEventArgs : EventArgs
+{
+    public Manifest? OldManifest { get; }
+    public Manifest? NewManifest { get; }
+
+    public ManifestChangedEventArgs(Manifest? oldManifest, Manifest? newManifest)
+    {
+        OldManifest = oldManifest;
+        NewManifest = newManifest;
     }
 }
 
