@@ -23,26 +23,29 @@ ORAS Desktop is built on top of the [ORAS .NET SDK](https://github.com/oras-proj
 
 1. Visit our [Releases page](https://github.com/shizhMSFT/oras-desktop/releases)
 2. Download the version for your operating system:
-   - Windows: `.zip` file
    - macOS: `.app.zip` file
    - Linux: `.tar.gz` file
+   - Windows: `.zip` file
 
 ### Installation
 
-#### Windows
-1. Extract the downloaded ZIP file
-2. Double-click `OrasProject.OrasDesktop.Desktop.exe` to start the application
-
 #### macOS
+
 1. Extract the downloaded `.app.zip` file
 2. Move the extracted app to your Applications folder
 3. Right-click the app and select "Open" (required only on first launch)
 
 #### Linux
+
 1. Extract the downloaded TAR.GZ file
 2. Open a terminal and navigate to the extracted folder
 3. Make the application executable: `chmod +x OrasProject.OrasDesktop.Desktop`
 4. Run the application: `./OrasProject.OrasDesktop.Desktop`
+
+#### Windows
+
+1. Extract the downloaded ZIP file
+2. Double-click `OrasProject.OrasDesktop.Desktop.exe` to start the application
 
 ## Using ORAS Desktop
 
@@ -69,27 +72,60 @@ ORAS Desktop is built on top of the [ORAS .NET SDK](https://github.com/oras-proj
 - Clickable digest links allow quick navigation between related manifests
 - The manifest shows important metadata like layers, configuration, and annotations
 
-
-
 ## System Requirements
 
-- **Windows**: Windows 10 or later (64-bit)
 - **macOS**: macOS 11 (Big Sur) or later (Intel or Apple Silicon)
 - **Linux**: Most modern 64-bit distributions (Ubuntu 20.04+, Fedora 34+, etc.)
+- **Windows**: Windows 10 or later (64-bit)
+
+## Building from Source
+
+### Prerequisites
+
+- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or later
+
+### Build Steps
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/shizhMSFT/oras-desktop.git
+   cd oras-desktop
+   ```
+
+2. Restore dependencies and build:
+   ```bash
+   dotnet restore
+   dotnet build --configuration Release
+   ```
+
+3. Run the application:
+   ```bash
+   dotnet run --project OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj
+   ```
 
 ## Troubleshooting
 
 ### Application Won't Start
 
-- **Windows**: Make sure you have the [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) installed
 - **macOS**: If you get a "damaged app" warning, try right-clicking the app and selecting "Open"
 - **Linux**: Ensure the application has execute permissions (`chmod +x`)
+- **Windows**: Make sure you have the [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) installed
 
 ### Can't Connect to Registry
 
 - Check your network connection
 - Verify your credentials are correct
 - Some registries may have IP restrictions or other access controls
+
+### Enable Debug Logging
+
+To enable detailed debug logging, run the application with the `--debug` flag:
+
+```bash
+dotnet run --project OrasProject.OrasDesktop.Desktop/OrasProject.OrasDesktop.Desktop.csproj -- --debug
+```
+
+Logs are written to a temp file. The file path is shown in the status bar.
 
 ### For Additional Help
 

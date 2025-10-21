@@ -77,6 +77,8 @@ public record ReferrerNode(
 ## Avalonia UI Framework
 
 Cross-platform UI framework for .NET applications on Windows, macOS, and Linux with XAML-based approach.
+Keep `MainView` and `MainViewModel` slim by delegating behavior to focused views and view models and cascade this pattern, 
+prefer composition over inheritance, and preserve loose coupling through clear interfaces and encapsulated services.
 
 ### Key UI Components
 
