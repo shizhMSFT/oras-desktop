@@ -42,7 +42,16 @@ public sealed class TempFileLoggerProvider : ILoggerProvider
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
 
-        public bool IsEnabled(LogLevel logLevel) => _isEnabled() && logLevel >= LogLevel.Information;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            if (!_isEnabled())
+            {
+                return false;
+            }
+
+            var minLevel = DesktopLoggingOptions.DebugLoggingEnabled ? LogLevel.Debug : LogLevel.Information;
+            return logLevel >= minLevel;
+        }
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {

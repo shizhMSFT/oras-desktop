@@ -1,0 +1,392 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:OrasProject.OrasDesktop.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="OrasProject.OrasDesktop.Views.ArtifactView"
+             x:DataType="vm:ArtifactViewModel">
+  
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding CopyReferenceWithTagCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+D" Command="{Binding CopyReferenceWithDigestCommand}" />
+    <KeyBinding Gesture="Delete" Command="{Binding DeleteManifestCommand}" />
+  </UserControl.KeyBindings>
+  
+  <!-- Wrapper Grid to handle both empty and loaded states -->
+  <Grid>
+    <!-- Empty state message when no artifact is loaded -->
+    <Border IsVisible="{Binding JsonViewer.CurrentDigest, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+            VerticalAlignment="Center"
+            HorizontalAlignment="Center"
+            Padding="32">
+      <StackPanel Spacing="16" HorizontalAlignment="Center">
+        <PathIcon 
+          Height="48" 
+          Width="48" 
+          HorizontalAlignment="Center"
+          Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+          Data="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,5V19H5V5H19Z"/>
+        <TextBlock 
+          Text="No Artifact Selected"
+          FontSize="18"
+          FontWeight="SemiBold"
+          HorizontalAlignment="Center"
+          Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+        <TextBlock 
+          Text="Select a repository and tag to view artifact details"
+          FontSize="13"
+          HorizontalAlignment="Center"
+          TextWrapping="Wrap"
+          MaxWidth="300"
+          TextAlignment="Center"
+          Foreground="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+      </StackPanel>
+    </Border>
+
+    <!-- Artifact details when loaded -->
+    <Grid IsVisible="{Binding JsonViewer.CurrentDigest, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" 
+          RowDefinitions="Auto,Auto,*">
+      
+      <!-- Row 0: Header -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+        <TextBlock
+          Grid.Column="0"
+          Classes="section-header"
+          VerticalAlignment="Center"
+          Text="Artifact Details" />
+        
+        <Button
+          Grid.Column="2"
+          Classes="icon-button" 
+          Command="{Binding ArtifactActionsCommand}"
+          ToolTip.Tip="Artifact Actions"
+          Width="20"
+          Height="20"
+          Padding="2"
+          HorizontalAlignment="Right">
+          <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Copy fully qualified tag reference" 
+                          Command="{Binding CopyReferenceWithTagCommand}"
+                          InputGesture="Ctrl+Shift+T">
+                  <MenuItem.Icon>
+                    <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"/>
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Copy fully qualified digest reference" 
+                          Command="{Binding CopyReferenceWithDigestCommand}"
+                          InputGesture="Ctrl+Shift+D">
+                  <MenuItem.Icon>
+                    <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"/>
+                  </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Delete Manifest" 
+                          Command="{Binding DeleteManifestCommand}"
+                          InputGesture="Delete">
+                  <MenuItem.Icon>
+                    <PathIcon Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+                  </MenuItem.Icon>
+                </MenuItem>
+              </MenuFlyout>
+            </Button.Flyout>
+            <PathIcon Height="16" Width="16" Data="M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z">
+              <PathIcon.RenderTransform>
+                <RotateTransform Angle="90" />
+              </PathIcon.RenderTransform>
+            </PathIcon>
+          </Button>
+        </Grid>
+
+        <!-- Row 1: Digest and Platform Sizes -->
+        <ScrollViewer
+          Grid.Row="1"
+          Padding="0"
+          VerticalScrollBarVisibility="Auto"
+          HorizontalScrollBarVisibility="Disabled"
+          MaxHeight="250">
+          <StackPanel Spacing="8">
+            <!-- Digest -->
+            <Grid ColumnDefinitions="Auto,*">
+              <TextBlock
+                Grid.Column="0"
+                Classes="artifact-label"
+                Text="Digest:"
+                VerticalAlignment="Top"
+                Margin="0,5,10,0" />
+              <Border
+                Grid.Column="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                Height="26"
+                Padding="0"
+                ClipToBounds="True">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBox
+                    Grid.Column="0"
+                    Classes="artifact-value"
+                    Text="{Binding JsonViewer.CurrentDigest}"
+                    IsReadOnly="True"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    Padding="6,3"
+                    FontSize="11"
+                    VerticalAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    TextWrapping="NoWrap"
+                    CaretBrush="Transparent"
+                    ContextMenu="{Binding JsonViewer.DigestContextMenu}">
+                  </TextBox>
+                  <Button
+                    Grid.Column="1"
+                    Width="26"
+                    Height="26"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Command="{Binding JsonViewer.DigestContextMenu.CopyDigestCommand}"
+                    ToolTip.Tip="Copy digest">
+                    <Path
+                      Width="12"
+                      Height="12"
+                      Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"
+                      Fill="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                      Stretch="Uniform" />
+                  </Button>
+                </Grid>
+              </Border>
+            </Grid>
+
+            <!-- Image Size Summary -->
+            <Grid ColumnDefinitions="Auto,*"
+                  IsVisible="{Binding PlatformSizes.ArtifactSizeSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock
+                Grid.Column="0"
+                Classes="artifact-label"
+                Text="Image size:"
+                VerticalAlignment="Top"
+                Margin="0,0,10,0" />
+              <TextBlock
+                Grid.Column="1"
+                Classes="artifact-value"
+                Text="{Binding PlatformSizes.ArtifactSizeSummary}"
+                VerticalAlignment="Top" />
+            </Grid>
+
+            <!-- Platform Image Sizes -->
+            <Grid IsVisible="{Binding PlatformSizes.HasPlatformSizes}">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+              </Grid.RowDefinitions>
+              <TextBlock
+                Classes="artifact-label"
+                Grid.Row="0"
+                Margin="0,0,0,6"
+                Text="Platform Image Sizes:"
+                VerticalAlignment="Top" />
+              <Border
+                Grid.Row="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                MinHeight="60"
+                MaxHeight="150"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0">
+                  <ItemsControl ItemsSource="{Binding PlatformSizes.PlatformImageSizes}" Margin="4">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Margin="0,2" Padding="6,4" 
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
+                                BorderThickness="0">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Button 
+                              Grid.Column="0" 
+                              Padding="4,2" 
+                              Background="Transparent"
+                              BorderThickness="0" 
+                              Cursor="Hand"
+                              Command="{Binding $parent[UserControl].((vm:ArtifactViewModel)DataContext).ViewPlatformManifestCommand}" 
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="Click to view platform-specific manifest">
+                              <TextBlock Classes="platform-name"
+                                        Text="{Binding Platform}"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource SystemAccentColor}"/>
+                            </Button>
+                            <ProgressBar Grid.Column="1" Margin="12,0" Height="8" Minimum="0" Maximum="100" 
+                                        Value="{Binding RelativePercentage}" 
+                                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}" 
+                                        Foreground="{DynamicResource SystemAccentColor}"/>
+                            <TextBlock Classes="artifact-value"
+                                      Grid.Column="2" 
+                                      Text="{Binding HumanReadableSize}" 
+                                      VerticalAlignment="Center"/>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Border>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Row 2: TabControl (expands with window) -->
+        <TabControl
+          Grid.Row="2"
+          x:Name="ManifestTabs"
+          SelectedIndex="{Binding SelectedTabIndex}"
+          Background="Transparent"
+          BorderThickness="0,0,0,1"
+          BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+          Margin="0,16,0,0"
+          Padding="0,0,0,4">
+          <TabControl.Styles>
+            <!-- Style TabItems with custom template to remove underlines -->
+            <Style Selector="#ManifestTabs > TabItem">
+              <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumHighBrush}" />
+              <Setter Property="FontSize" Value="12"/>
+              <Setter Property="VerticalAlignment" Value="Center"/>
+              <Setter Property="Background" Value="Transparent"/>
+              <Setter Property="Margin" Value="0,0,0,0"/>
+              <Setter Property="Padding" Value="8,0"/>
+              <Setter Property="BorderThickness" Value="0"/>
+              <Setter Property="BorderBrush" Value="Transparent"/>
+              <Setter Property="VerticalContentAlignment" Value="Center"/>
+              <Setter Property="Height" Value="20"/>
+              <Setter Property="MinHeight" Value="20"/>
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="TabItem">
+                    <Border Background="{TemplateBinding Background}" 
+                            Padding="{TemplateBinding Padding}"
+                            BorderThickness="0"
+                            BorderBrush="Transparent">
+                      <ContentPresenter
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Content="{TemplateBinding Header}"
+                        Foreground="{TemplateBinding Foreground}" />
+                    </Border>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+
+            <!-- Hover state -->
+            <Style Selector="#ManifestTabs > TabItem:pointerover">
+              <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+            </Style>
+
+            <!-- Selected state -->
+            <Style Selector="#ManifestTabs > TabItem:selected">
+              <Setter Property="Background" Value="{DynamicResource TabSelectedBackground}" />
+              <Setter Property="Foreground" Value="{DynamicResource TabSelectedForeground}" />
+              <Setter Property="FontWeight" Value="Bold" />
+            </Style>
+          </TabControl.Styles>
+          <TabItem Header="Manifest">
+            <ScrollViewer
+              HorizontalScrollBarVisibility="Auto"
+              VerticalScrollBarVisibility="Auto"
+              BringIntoViewOnFocusChange="False">
+              <Border
+                Background="{DynamicResource TabContentBackground}"
+                BorderThickness="0"
+                Padding="8,8,8,10">
+                <ContentControl
+                  x:Name="ManifestViewer"
+                  Padding="0,2,16,0"
+                  Background="Transparent"
+                  FontFamily="Consolas"
+                  Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+              </Border>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="Referrers">
+            <ScrollViewer 
+              VerticalScrollBarVisibility="Auto">
+              <Border
+                Background="{DynamicResource TabContentBackground}"
+                BorderThickness="0"
+                Padding="12,8,12,12">
+                <TreeView 
+                  Name="ReferrersTreeView"
+                  ItemsSource="{Binding Referrer.Referrers}" 
+                  SelectedItem="{Binding Referrer.SelectedReferrerNode}"
+                  SelectionChanged="ReferrersTreeView_OnSelectionChanged"
+                  Classes="code-view">
+                  <TreeView.Styles>
+                    <Style Selector="TreeViewItem">
+                      <Setter Property="Padding" Value="4,2,4,2" />
+                      <Setter Property="MinHeight" Value="0" />
+                    </Style>
+                  </TreeView.Styles>
+                  <TreeView.ContextMenu>
+                    <ContextMenu>
+                      <!-- Artifact Type commands (visible when artifact type group node is selected) -->
+                      <MenuItem 
+                        Header="Copy Artifact Type" 
+                        Command="{Binding Referrer.ContextMenu.ArtifactTypeContextMenu.CopyArtifactTypeCommand}"
+                        IsVisible="{Binding Referrer.ContextMenu.IsArtifactTypeNode}"
+                        InputGesture="Ctrl+C">
+                        <MenuItem.Icon>
+                          <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <!-- Digest commands (visible when digest node is selected) -->
+                      <MenuItem 
+                        Header="Get Manifest" 
+                        Command="{Binding Referrer.ContextMenu.DigestContextMenu.GetManifestCommand}"
+                        IsVisible="{Binding Referrer.ContextMenu.IsDigestNode}">
+                        <MenuItem.Icon>
+                          <PathIcon Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <Separator IsVisible="{Binding Referrer.ContextMenu.IsDigestNode}" />
+                      <MenuItem 
+                        Header="Copy Digest" 
+                        Command="{Binding Referrer.ContextMenu.DigestContextMenu.CopyDigestCommand}"
+                        IsVisible="{Binding Referrer.ContextMenu.IsDigestNode}"
+                        InputGesture="Ctrl+C">
+                        <MenuItem.Icon>
+                          <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <MenuItem 
+                        Header="Copy Fully Qualified Reference" 
+                        Command="{Binding Referrer.ContextMenu.DigestContextMenu.CopyFullyQualifiedReferenceCommand}"
+                        IsVisible="{Binding Referrer.ContextMenu.IsDigestNode}"
+                        InputGesture="Ctrl+Shift+C">
+                        <MenuItem.Icon>
+                          <PathIcon Data="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                    </ContextMenu>
+                  </TreeView.ContextMenu>
+                  <TreeView.ItemTemplate>
+                    <TreeDataTemplate ItemsSource="{Binding Children}">
+                      <TextBlock 
+                        Text="{Binding Display}"
+                        Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                        FontFamily="Consolas"
+                        FontSize="11"/>
+                    </TreeDataTemplate>
+                  </TreeView.ItemTemplate>
+                </TreeView>
+              </Border>
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </Grid>
+      <!-- End of artifact details when loaded -->
+    
+    </Grid>
+    <!-- End of wrapper grid -->
+  </UserControl>

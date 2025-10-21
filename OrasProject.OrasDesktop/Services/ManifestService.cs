@@ -30,26 +30,27 @@ public class ManifestService
     public LoadSource CurrentLoadSource => _currentLoadSource;
     
     /// <summary>
-    /// Requests a manifest load. Returns false if the same reference was just loaded (circuit breaker).
+    /// Requests a manifest load via the LoadRequested event.
+    /// Includes circuit breaker to prevent duplicate loads of the same reference.
     /// </summary>
     /// <param name="reference">The full reference to load (e.g., registry/repo:tag)</param>
     /// <param name="source">The source of the request (Tag, ReferenceBox, History)</param>
     /// <param name="forceReload">If true, bypasses the circuit breaker</param>
-    /// <returns>True if load was requested, false if circuit-broken</returns>
-    public bool RequestLoad(string reference, LoadSource source, bool forceReload = false)
+    /// <returns>True if load was requested, false if blocked by circuit breaker</returns>
+    public bool TryRequestLoad(string reference, LoadSource source, bool forceReload = false)
     {
-        System.Diagnostics.Debug.WriteLine($"[ManifestLoader] RequestLoad called with reference: {reference}, source: {source}, forceReload: {forceReload}");
+        System.Diagnostics.Debug.WriteLine($"[ManifestLoader] TryRequestLoad called with reference: {reference}, source: {source}, forceReload: {forceReload}");
         
         if (string.IsNullOrWhiteSpace(reference))
         {
-            System.Diagnostics.Debug.WriteLine($"[ManifestLoader] RequestLoad rejected - reference is null or whitespace");
+            System.Diagnostics.Debug.WriteLine($"[ManifestLoader] TryRequestLoad rejected - reference is null or whitespace");
             return false;
         }
         
         // Circuit breaker: prevent reload of same reference unless forced
         if (!forceReload && _lastLoadedReference == reference)
         {
-            System.Diagnostics.Debug.WriteLine($"[ManifestLoader] RequestLoad circuit-broken - same reference was just loaded: {reference}");
+            System.Diagnostics.Debug.WriteLine($"[ManifestLoader] TryRequestLoad circuit-broken - same reference was just loaded: {reference}");
             return false;
         }
         

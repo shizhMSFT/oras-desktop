@@ -13,6 +13,9 @@
         
         <Window.KeyBindings>
                 <KeyBinding Gesture="F4" />
+                <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding Artifact.CopyReferenceWithTagCommand}" />
+                <KeyBinding Gesture="Ctrl+Shift+D" Command="{Binding Artifact.CopyReferenceWithDigestCommand}" />
+                <KeyBinding Gesture="Delete" Command="{Binding Artifact.DeleteManifestCommand}" />
         </Window.KeyBindings>
         
         <views:MainView x:Name="MainViewControl" />

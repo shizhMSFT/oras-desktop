@@ -88,6 +88,24 @@ public partial class ReferenceHistoryControl : UserControl
                             }, DispatcherPriority.Background);
                         }
                     });
+                
+                // Subscribe to FocusRequested event
+                viewModel.FocusRequested += (s, e) =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (textBox != null)
+                        {
+                            textBox.Focus();
+                            textBox.SelectAll();
+                            
+                            if (_logger.IsEnabled(LogLevel.Information))
+                            {
+                                _logger.LogInformation("Focus requested via event, textbox focused and text selected.");
+                            }
+                        }
+                    }, DispatcherPriority.Background);
+                };
             }
         };
     }
