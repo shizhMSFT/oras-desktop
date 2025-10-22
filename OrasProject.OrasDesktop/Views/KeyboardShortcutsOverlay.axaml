@@ -1,0 +1,326 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:OrasProject.OrasDesktop.ViewModels"
+             x:Class="OrasProject.OrasDesktop.Views.KeyboardShortcutsOverlay"
+             x:DataType="vm:KeyboardShortcutsViewModel">
+
+  <UserControl.Styles>
+    <!-- Semi-transparent overlay background -->
+    <Style Selector="Border.overlay-background">
+      <Setter Property="Background" Value="#99000000" />
+    </Style>
+    
+    <!-- Panel container -->
+    <Style Selector="Border.shortcuts-panel">
+      <Setter Property="Background" Value="#F4F6FF" />
+      <Setter Property="BorderBrush" Value="#D2D9EC" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.shortcuts-panel:dark">
+      <Setter Property="Background" Value="#E21F242E" />
+      <Setter Property="BorderBrush" Value="#3C4555" />
+    </Style>
+
+    <!-- Section cards -->
+    <Style Selector="Border.section-card">
+      <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="18" />
+      <Setter Property="Margin" Value="0,0,0,20" />
+      <Setter Property="BorderBrush" Value="#C3CDE8" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.section-card:dark">
+      <Setter Property="Background" Value="#2D3444" />
+      <Setter Property="BorderBrush" Value="#465068" />
+    </Style>
+
+    <!-- Key chip styling -->
+    <Style Selector="Border.key-chip">
+      <Setter Property="Background" Value="#E4E7F2" />
+      <Setter Property="BorderBrush" Value="#CBD2E4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="Border.key-chip:dark">
+      <Setter Property="Background" Value="#3B4251" />
+      <Setter Property="BorderBrush" Value="#51596B" />
+    </Style>
+    <Style Selector="TextBlock.key-text">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#1A1E2E" />
+    </Style>
+    <Style Selector="TextBlock.key-text:dark">
+      <Setter Property="Foreground" Value="#E9ECF8" />
+    </Style>
+
+    <!-- Typography -->
+    <Style Selector="TextBlock.header">
+      <Setter Property="Foreground" Value="#1A1E2E" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.header:dark">
+      <Setter Property="Foreground" Value="#E8EAED" />
+    </Style>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="Foreground" Value="#4C5370" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="TextBlock.section-title:dark">
+      <Setter Property="Foreground" Value="#B0B5C6" />
+    </Style>
+    <Style Selector="TextBlock.shortcut-desc">
+      <Setter Property="Foreground" Value="#2D3145" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBlock.shortcut-desc:dark">
+      <Setter Property="Foreground" Value="#D6DAE7" />
+    </Style>
+
+    <Style Selector="Border.header-border">
+      <Setter Property="BorderBrush" Value="#E0E5F2" />
+    </Style>
+    <Style Selector="Border.header-border:dark">
+      <Setter Property="BorderBrush" Value="#333844" />
+    </Style>
+
+    <!-- Light theme styles -->
+    <Style Selector="Button.close-button">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="Background" Value="#5B6B8C" />
+      <Setter Property="BorderBrush" Value="#4A5A7A" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.close-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#7A8AAC" />
+      <Setter Property="BorderBrush" Value="#6A7A9A" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button.close-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4A5A7A" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    
+    <!-- Dark theme styles -->
+    <Style Selector="Button.close-button:dark">
+      <Setter Property="Background" Value="#4A5670" />
+      <Setter Property="BorderBrush" Value="#3A4660" />
+    </Style>
+    <Style Selector="Button.close-button:dark:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#5F6D8C" />
+      <Setter Property="BorderBrush" Value="#4F5D7C" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button.close-button:dark:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3A4660" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Semi-transparent overlay -->
+  <Border Classes="overlay-background"
+          IsVisible="{Binding IsVisible}"
+          PointerPressed="OnOverlayClicked">
+    
+    <!-- Centered shortcuts panel -->
+    <Border Classes="shortcuts-panel"
+            Width="760"
+            MaxHeight="680"
+            CornerRadius="8"
+            BorderThickness="1"
+            BoxShadow="0 8 16 0 #40000000"
+            Padding="0"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center">
+      
+      <Grid RowDefinitions="Auto,*,Auto">
+        
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Classes="header-border"
+                Padding="24,20"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0"
+                       Classes="header"
+                       Text="Keyboard shortcuts"
+                       FontSize="20"
+                       FontWeight="Normal"
+                       VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+              <TextBlock Classes="shortcut-desc"
+                         Text="Press Esc to close"
+                         VerticalAlignment="Center"
+                         FontSize="12"
+                         Opacity="0.7" />
+              <Button Content="Close"
+                      Click="OnCloseClicked"
+                      Padding="12,7"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center"
+                      HorizontalContentAlignment="Center"
+                      MinWidth="80"
+                      Classes="close-button" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+  <!-- Shortcuts content -->
+  <ScrollViewer Grid.Row="1"
+          Padding="20,20,20,28">
+      <Grid ColumnDefinitions="*,*"
+        RowDefinitions="Auto,Auto">
+            
+            <!-- Global shortcuts -->
+      <Border Grid.Row="0"
+        Grid.Column="0"
+        Margin="0,0,10,0"
+        Classes="section-card">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="section-title" Text="Global" />
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="/" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Toggle this shortcuts overlay" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Esc" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Clear focus / dismiss overlay" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="F4" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Focus reference box" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Shift" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="T" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Copy reference with tag" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Shift" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="D" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Copy reference with digest" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Delete" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Delete selected manifest" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Reference & history -->
+      <Border Grid.Row="0"
+        Grid.Column="1"
+        Margin="10,0,0,0"
+        Classes="section-card">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="section-title" Text="Reference &amp; History" />
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Enter" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Load manifest from reference box" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="←" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Previous reference in history" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="→" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Next reference in history" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="↑" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="↓" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Navigate open history list" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Delete" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Remove selected history entry" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Esc" /></Border>
+                  <TextBlock Classes="shortcut-desc" Text="Close history dropdown" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Tags & referrers -->
+  <Border Grid.Row="1"
+        Grid.Column="0"
+        Grid.ColumnSpan="2"
+    Margin="0,20,0,40"
+        Classes="section-card">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="section-title" Text="Tags &amp; Referrers" />
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="C" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Copy selected tag" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="C" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Copy digest for selected referrer" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Ctrl" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="Shift" /></Border>
+                    <Border Classes="key-chip"><TextBlock Classes="key-text" Text="C" /></Border>
+                  </StackPanel>
+                  <TextBlock Classes="shortcut-desc" Text="Copy fully qualified referrer reference" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </ScrollViewer>
+
+      </Grid>
+    </Border>
+  </Border>
+
+</UserControl>
