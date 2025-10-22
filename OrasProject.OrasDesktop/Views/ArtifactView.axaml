@@ -388,7 +388,7 @@
                       </MenuItem>
                       <!-- Annotation commands (visible when annotation node is selected) -->
                       <MenuItem 
-                        Header="Copy Annotation" 
+                        Header="Copy Annotation (Key and Value)" 
                         Command="{Binding Referrer.ContextMenu.AnnotationContextMenu.CopyBothCommand}"
                         IsVisible="{Binding Referrer.ContextMenu.IsAnnotationNode}"
                         InputGesture="Ctrl+C">
