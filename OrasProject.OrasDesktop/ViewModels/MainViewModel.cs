@@ -44,6 +44,7 @@ namespace OrasProject.OrasDesktop.ViewModels
         private ConnectionViewModel _connection = new(); // Connection control component
         private StatusBarViewModel _statusBar; // Status bar component (subscribes to StatusService)
         private ArtifactViewModel _artifact; // Artifact display component (initialized in constructor)
+        private KeyboardShortcutsViewModel _keyboardShortcuts = new(); // Keyboard shortcuts overlay
 
         // Commands
         public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
@@ -304,6 +305,12 @@ namespace OrasProject.OrasDesktop.ViewModels
         {
             get => _statusBar;
             set => this.RaiseAndSetIfChanged(ref _statusBar, value);
+        }
+
+        public KeyboardShortcutsViewModel KeyboardShortcuts
+        {
+            get => _keyboardShortcuts;
+            set => this.RaiseAndSetIfChanged(ref _keyboardShortcuts, value);
         }
 
         // Allow operations as soon as a tag is selected; internal commands manage busy state themselves.

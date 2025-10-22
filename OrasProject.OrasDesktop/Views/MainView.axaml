@@ -158,5 +158,12 @@
     <views:StatusBar
       Grid.Row="3"
       DataContext="{Binding StatusBar}" />
+      
+    <!-- Keyboard shortcuts overlay (spans all rows and sits on top) -->
+    <views:KeyboardShortcutsOverlay
+      Grid.Row="0"
+      Grid.RowSpan="4"
+      DataContext="{Binding KeyboardShortcuts}"
+      ZIndex="1000" />
   </Grid>
 </UserControl>

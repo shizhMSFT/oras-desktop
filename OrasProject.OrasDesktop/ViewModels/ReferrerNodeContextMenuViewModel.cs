@@ -80,8 +80,8 @@ public class ReferrerNodeContextMenuViewModel : ViewModelBase
     }
 
     public bool IsDigestNode => Node != null && !Node.IsGroup && Node.Info != null && !string.IsNullOrEmpty(Node.Info.Digest);
-    public bool IsAnnotationNode => Node != null && !Node.IsGroup && Node.Display.Contains(':') && (Node.Info == null || string.IsNullOrEmpty(Node.Info.Digest));
-    public bool IsArtifactTypeNode => Node != null && Node.IsGroup && !string.IsNullOrEmpty(Node.Display);
+    public bool IsAnnotationNode => Node != null && !Node.IsGroup && Node.Display.Contains(':') && !Node.Display.Equals("[annotations]", StringComparison.OrdinalIgnoreCase) && (Node.Info == null || string.IsNullOrEmpty(Node.Info.Digest));
+    public bool IsArtifactTypeNode => Node != null && Node.IsGroup && !string.IsNullOrEmpty(Node.Display) && !Node.Display.Equals("[annotations]", StringComparison.OrdinalIgnoreCase);
 
     private void UpdateContextMenus()
     {
